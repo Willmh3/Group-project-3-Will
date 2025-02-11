@@ -1,9 +1,14 @@
 import streamlit as st
-import folium
 import pandas as pd
-import matplotlib.pyplot as plt
-import os
 import re
+
+def is_valid_uk_postcode(postcode):
+    """
+    Validates a UK postcode using a regular expression.
+    """
+    # UK postcode regex pattern
+    pattern = r"^([A-Za-z]{1,2}\d{1,2}[A-Za-z]? \d[A-Za-z]{2})$"
+    return re.match(pattern, postcode) is not None
 
 def show():
     st.title("House Price Prediction")
@@ -23,17 +28,12 @@ def show():
     if "predicted_price" not in st.session_state:
         st.session_state.predicted_price = None
 
-    # Function to validate London postcode
-    def is_valid_london_postcode(postcode):
-        london_postcode_regex = re.compile(r"^(([A-Z]{1,2}\d[A-Z\d]? \d[A-Z]{2})|GIR 0AA)$", re.IGNORECASE)
-        return london_postcode_regex.match(postcode) is not None
-
     # Function to update predicted price based on inputs
     def update_predicted_price():
-        if postcode and is_valid_london_postcode(postcode):
-            st.session_state.predicted_price = "$350,000"  # Placeholder
+        if postcode and is_valid_uk_postcode(postcode):  # Use custom validation function
+            st.session_state.predicted_price = "$350,000"  # Placeholder (replace with dummy logic)
         else:
-            st.session_state.predicted_price = "Invalid or missing postcode. Please enter a valid London postcode."
+            st.session_state.predicted_price = "Invalid or missing postcode. Please enter a valid UK postcode."
 
     update_predicted_price()
 
@@ -45,39 +45,3 @@ def show():
     </div>
     """
     st.markdown(price_box, unsafe_allow_html=True)
-
-    # Function to load and aggregate house price data efficiently
-    def load_price_growth_data(postcode):
-        base_path = r"/workspaces/Group-project-3-Will/split_datasets"  # Adjust with actual path
-        years_to_load = [2020, 2021, 2022, 2023, 2024]  # Load years 2020-2024
-        data_list = []
-
-        for year in years_to_load:
-            file_path = os.path.join(base_path, f"sales_{year}.csv")
-            if os.path.exists(file_path):
-                df = pd.read_csv(file_path, usecols=["Date", "Postcode", "Price"])  # Adjust column names
-                df = df[df["Postcode"] == postcode]  # Filter by postcode
-                df["Year"] = pd.to_datetime(df["Date"]).dt.year  # Extract year from date
-                data_list.append(df)
-
-        if data_list:
-            full_data = pd.concat(data_list)
-            avg_prices = full_data.groupby("Year")["Price"].mean().reset_index()
-            return avg_prices
-        else:
-            return pd.DataFrame({"Year": [], "Price": []})
-
-    # Show price growth trend
-    if postcode and is_valid_london_postcode(postcode):
-        st.subheader("House Price Growth (Last 5 Years)")
-        df = load_price_growth_data(postcode)
-        
-        if not df.empty:
-            fig, ax = plt.subplots()
-            ax.plot(df["Year"], df["Price"], marker='o', linestyle='-')
-            ax.set_xlabel("Year")
-            ax.set_ylabel("Average Price (£)")
-            ax.set_title(f"Price Growth in {postcode}")
-            st.pyplot(fig)
-        else:
-            st.write("No data available for this postcode.")

@@ -4,8 +4,9 @@ import sections.data_analytics as data_analytics
 
 st.set_page_config(page_title="House Price Predictor", layout="wide")
 
-# Maroon top bar
-st.markdown("""
+# Maroon top bar with margin to prevent overlap
+st.markdown(
+    """
     <style>
         .top-bar {
             background-color: maroon;
@@ -19,9 +20,12 @@ st.markdown("""
             left: 0;
             width: 100%;
             z-index: 1000;
+            margin-bottom: 60px; /* Added margin to prevent overlap */
         }
     </style>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True
+)
 
 st.markdown('<div class="top-bar">House Price Predictor</div>', unsafe_allow_html=True)
 
@@ -32,16 +36,23 @@ st.sidebar.title("Navigation")
 if 'selected' not in st.session_state:
     st.session_state.selected = 'home'  # Default selection
 
-home_button = st.sidebar.button("🏠 Home")
-house_price_button = st.sidebar.button("📈 House Price Predictor")
-data_analytics_button = st.sidebar.button("📊 Data Analytics")
+# Highlight selected button
+if st.session_state.selected == 'home':
+    st.sidebar.markdown("🏠 **Home**")
+else:
+    st.sidebar.markdown("🏠 Home")
 
-if home_button:
-    st.session_state.selected = 'home'
-elif house_price_button:
-    st.session_state.selected = 'house_price'
-elif data_analytics_button:
-    st.session_state.selected = 'data_analytics'
+if st.session_state.selected == 'house_price':
+    st.sidebar.markdown("📈 **House Price Predictor**")
+else:
+    if st.sidebar.button("📈 House Price Predictor"):
+        st.session_state.selected = 'house_price'
+
+if st.session_state.selected == 'data_analytics':
+    st.sidebar.markdown("📊 **Data Analytics**")
+else:
+    if st.sidebar.button("📊 Data Analytics"):
+        st.session_state.selected = 'data_analytics'
 
 # Show content based on the selection in session state
 if st.session_state.selected == 'home':
