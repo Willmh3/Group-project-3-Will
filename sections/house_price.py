@@ -1,7 +1,8 @@
 import streamlit as st
 import folium
-from geopy.geocoders import Nominatim
-from geopy.exc import GeocoderTimedOut, GeopyError
+import pandas as pd
+import matplotlib.pyplot as plt
+import os
 import re
 
 def show():
@@ -19,35 +20,8 @@ def show():
         flat_number = st.text_input("Flat Number (optional)", key="flat_number", max_chars=10)
 
     # Initialize session state variables if they don't exist
-    if "address" not in st.session_state:
-        st.session_state.address = ""
-    if "latitude" not in st.session_state:
-        st.session_state.latitude = None
-    if "longitude" not in st.session_state:
-        st.session_state.longitude = None
     if "predicted_price" not in st.session_state:
         st.session_state.predicted_price = None
-
-    # Function to get location with retry mechanism
-    def get_location(address, retries=3):
-        geolocator = Nominatim(user_agent="geoapiExercises")
-        for attempt in range(retries):
-            try:
-                location = geolocator.geocode(address, timeout=10)
-                if location:
-                    return location.latitude, location.longitude
-                else:
-                    st.error("Address not found. Please check the details and try again.")
-                    return None, None
-            except GeocoderTimedOut:
-                if attempt < retries - 1:
-                    st.warning(f"Retrying geolocation... ({attempt + 1}/{retries})")
-                else:
-                    st.error("Geocoder service timed out. Please try again later.")
-                    return None, None
-            except GeopyError as e:
-                st.error(f"Geolocation failed: {e}")
-                return None, None
 
     # Function to validate London postcode
     def is_valid_london_postcode(postcode):
@@ -57,46 +31,13 @@ def show():
     # Function to update predicted price based on inputs
     def update_predicted_price():
         if postcode and is_valid_london_postcode(postcode):
-            # This is a placeholder. Replace this with a call to your predictive model.
-            st.session_state.predicted_price = "$350,000"  # Random value for now
+            st.session_state.predicted_price = "$350,000"  # Placeholder
         else:
             st.session_state.predicted_price = "Invalid or missing postcode. Please enter a valid London postcode."
 
-    # Automatically update predicted price when inputs change
     update_predicted_price()
 
-    # Show the result of the geolocation (if available)
-    if st.button("Get Location"):
-        address = f"{house_number} {road} {flat_number} {postcode}".strip()
-
-        if not postcode or not is_valid_london_postcode(postcode):
-            st.error("Please enter a valid London postcode.")
-        else:
-            # Store address in session state to preserve it across reruns
-            st.session_state.address = address
-
-            # Check if latitude and longitude are already stored in session state
-            if st.session_state.latitude is None or st.session_state.longitude is None:
-                latitude, longitude = get_location(address)
-
-                if latitude and longitude:
-                    # Store latitude and longitude in session state
-                    st.session_state.latitude = latitude
-                    st.session_state.longitude = longitude
-
-    # Show the location map if the latitude and longitude are available
-    if st.session_state.latitude and st.session_state.longitude:
-        st.write(f"You entered: {st.session_state.address}")
-
-        # Create a map using the latitude and longitude
-        map_ = folium.Map(location=[st.session_state.latitude, st.session_state.longitude], zoom_start=15)
-        folium.Marker([st.session_state.latitude, st.session_state.longitude], popup=st.session_state.address).add_to(map_)
-
-        # Display the map
-        st.write("Map showing the location:")
-        st.components.v1.html(map_.repr_html(), width=700, height=500)
-
-    # Placeholder for the predicted price in a styled box
+    # Display predicted price
     st.subheader("Predicted House Price")
     price_box = f"""
     <div style="border: 2px solid #4CAF50; padding: 10px; border-radius: 5px; text-align: center; font-size: 20px;">
@@ -104,3 +45,39 @@ def show():
     </div>
     """
     st.markdown(price_box, unsafe_allow_html=True)
+
+    # Function to load and aggregate house price data efficiently
+    def load_price_growth_data(postcode):
+        base_path = r"/workspaces/Group-project-3-Will/split_datasets"  # Adjust with actual path
+        years_to_load = [2020, 2021, 2022, 2023, 2024]  # Load years 2020-2024
+        data_list = []
+
+        for year in years_to_load:
+            file_path = os.path.join(base_path, f"sales_{year}.csv")
+            if os.path.exists(file_path):
+                df = pd.read_csv(file_path, usecols=["Date", "Postcode", "Price"])  # Adjust column names
+                df = df[df["Postcode"] == postcode]  # Filter by postcode
+                df["Year"] = pd.to_datetime(df["Date"]).dt.year  # Extract year from date
+                data_list.append(df)
+
+        if data_list:
+            full_data = pd.concat(data_list)
+            avg_prices = full_data.groupby("Year")["Price"].mean().reset_index()
+            return avg_prices
+        else:
+            return pd.DataFrame({"Year": [], "Price": []})
+
+    # Show price growth trend
+    if postcode and is_valid_london_postcode(postcode):
+        st.subheader("House Price Growth (Last 5 Years)")
+        df = load_price_growth_data(postcode)
+        
+        if not df.empty:
+            fig, ax = plt.subplots()
+            ax.plot(df["Year"], df["Price"], marker='o', linestyle='-')
+            ax.set_xlabel("Year")
+            ax.set_ylabel("Average Price (£)")
+            ax.set_title(f"Price Growth in {postcode}")
+            st.pyplot(fig)
+        else:
+            st.write("No data available for this postcode.")
