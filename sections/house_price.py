@@ -61,4 +61,4 @@ def show():
 
         # Display the map
         st.write("Map showing the location:")
-        st.components.v1.html(map_.repr_html(), width=700, height=500)
+        st.components.v1.html(map_.repr_html(), width=700, height=500)
