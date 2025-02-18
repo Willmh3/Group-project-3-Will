@@ -2,3 +2,5 @@ streamlit
 geopy
 folium
 streamlit-folium
+seaborn
+matplotlib
