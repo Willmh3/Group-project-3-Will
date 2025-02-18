@@ -1,6 +1,8 @@
 import streamlit as st
+import sections.home as home
 import sections.house_price as house_price
 import sections.data_analytics as data_analytics
+import sections.house_searching as house_searching
 
 st.set_page_config(page_title="House Price Predictor", layout="wide")
 
@@ -39,16 +41,12 @@ st.sidebar.title("Navigation")
 if 'selected' not in st.session_state:
     st.session_state.selected = 'home'
 
-# Define button style
+# Define button function
 def styled_button(label, page):
-    return st.sidebar.button(
-        label, 
-        key=page, 
-        use_container_width=True
-    )
+    return st.sidebar.button(label, key=page, use_container_width=True)
 
 # Navigation buttons
-if styled_button("🏠 Home", "home"):
+if styled_button("🏡 Home", "home"):
     st.session_state.selected = "home"
     st.rerun()
 
@@ -60,12 +58,19 @@ if styled_button("📊 Data Analytics", "data_analytics"):
     st.session_state.selected = "data_analytics"
     st.rerun()
 
-# Show content based on the selected page
+if styled_button("🔍 House Searching", "house_searching"):
+    st.session_state.selected = "house_searching"
+    st.rerun()
+
+# Show content based on selection
 if st.session_state.selected == 'home':
-    st.write("Welcome to the House Price Predictor App! Use the sidebar to navigate.")
+    home.show()
 
 elif st.session_state.selected == 'house_price':
     house_price.show()
 
 elif st.session_state.selected == 'data_analytics':
     data_analytics.show()
+
+elif st.session_state.selected == 'house_searching':
+    house_searching.show()
