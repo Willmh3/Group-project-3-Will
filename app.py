@@ -1,24 +1,76 @@
 import streamlit as st
-from geopy.geocoders import Nominatim
-import folium
+import sections.home as home
+import sections.house_price as house_price
+import sections.data_analytics as data_analytics
+import sections.house_searching as house_searching
 
-st.title("House Price Predictor")
+st.set_page_config(page_title="House Price Predictor", layout="wide")
 
-address = st.text_input("Enter an address:")
+# Maroon top bar
+st.markdown(
+    """
+    <style>
+        .top-bar {
+            background-color: maroon;
+            color: white;
+            padding: 15px;
+            font-size: 24px;
+            text-align: center;
+            font-weight: bold;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            z-index: 1000;
+        }
+        .stButton>button {
+            width: 100%;
+            text-align: left;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
-if address:
-    st.write(f"You entered: {address}")
-    
-    # Use Geopy to get coordinates for the address
-    geolocator = Nominatim(user_agent="house_price_predictor")
-    location = geolocator.geocode(address)
+st.markdown('<div class="top-bar">House Price Predictor</div>', unsafe_allow_html=True)
 
-    if location:
-        # Create a map with the location
-        map = folium.Map(location=[location.latitude, location.longitude], zoom_start=12)
-        folium.Marker([location.latitude, location.longitude], popup=address, icon=folium.Icon(color='red')).add_to(map)
+# Sidebar navigation
+st.sidebar.title("Navigation")
 
-        # Display map in Streamlit
-        st.map(map)
-    else:
-        st.write("Address not found.")
+# Initialize session state
+if 'selected' not in st.session_state:
+    st.session_state.selected = 'home'
+
+# Define button function
+def styled_button(label, page):
+    return st.sidebar.button(label, key=page, use_container_width=True)
+
+# Navigation buttons
+if styled_button("🏡 Home", "home"):
+    st.session_state.selected = "home"
+    st.rerun()
+
+if styled_button("📈 House Price Predictor", "house_price"):
+    st.session_state.selected = "house_price"
+    st.rerun()
+
+if styled_button("📊 Data Analytics", "data_analytics"):
+    st.session_state.selected = "data_analytics"
+    st.rerun()
+
+if styled_button("🔍 House Searching", "house_searching"):
+    st.session_state.selected = "house_searching"
+    st.rerun()
+
+# Show content based on selection
+if st.session_state.selected == 'home':
+    home.show()
+
+elif st.session_state.selected == 'house_price':
+    house_price.show()
+
+elif st.session_state.selected == 'data_analytics':
+    data_analytics.show()
+
+elif st.session_state.selected == 'house_searching':
+    house_searching.show()
