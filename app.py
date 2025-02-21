@@ -3,6 +3,7 @@ import sections.home as home
 import sections.house_price as house_price
 import sections.data_analytics as data_analytics
 import sections.house_searching as house_searching
+import sections.credits as credits
 
 st.set_page_config(page_title="House Price Predictor", layout="wide")
 
@@ -62,6 +63,10 @@ if styled_button("🔍 House Searching", "house_searching"):
     st.session_state.selected = "house_searching"
     st.rerun()
 
+if styled_button("Credits", "credits"):
+    st.session_state.selected = "credits"
+    st.rerun()
+
 # Show content based on selection
 if st.session_state.selected == 'home':
     home.show()
@@ -74,3 +79,6 @@ elif st.session_state.selected == 'data_analytics':
 
 elif st.session_state.selected == 'house_searching':
     house_searching.show()
+
+elif st.session_state.selected == 'credits':
+    credits.show()
