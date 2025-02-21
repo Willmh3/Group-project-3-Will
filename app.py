@@ -35,50 +35,44 @@ st.markdown(
 
 st.markdown('<div class="top-bar">House Price Predictor</div>', unsafe_allow_html=True)
 
-# Sidebar navigation
-st.sidebar.title("Navigation")
-
 # Initialize session state
 if 'selected' not in st.session_state:
     st.session_state.selected = 'home'
+if 'history' not in st.session_state:
+    st.session_state.history = []  # Track navigation history
 
-# Define button function
-def styled_button(label, page):
-    return st.sidebar.button(label, key=page, use_container_width=True)
+# Sidebar navigation
+st.sidebar.title("Navigation")
 
 # Navigation buttons
-if styled_button("🏡 Home", "home"):
-    st.session_state.selected = "home"
-    st.rerun()
+pages = {
+    "🏡 Home": "home",
+    "📈 House Price Predictor": "house_price",
+    "📊 Data Analytics": "data_analytics",
+    "🔍 House Searching": "house_searching",
+    "Credits": "credits"
+}
 
-if styled_button("📈 House Price Predictor", "house_price"):
-    st.session_state.selected = "house_price"
-    st.rerun()
+for label, page in pages.items():
+    if st.sidebar.button(label, key=page):
+        st.session_state.history.append(st.session_state.selected)  # Save current page to history
+        st.session_state.selected = page
 
-if styled_button("📊 Data Analytics", "data_analytics"):
-    st.session_state.selected = "data_analytics"
-    st.rerun()
-
-if styled_button("🔍 House Searching", "house_searching"):
-    st.session_state.selected = "house_searching"
-    st.rerun()
-
-if styled_button("Credits", "credits"):
-    st.session_state.selected = "credits"
-    st.rerun()
+# Add a "Back" button to return to the previous page
+if st.session_state.history:
+    if st.sidebar.button("⬅️ Back"):
+        st.session_state.selected = st.session_state.history.pop()  # Go back to the previous page
 
 # Show content based on selection
 if st.session_state.selected == 'home':
     home.show()
-
 elif st.session_state.selected == 'house_price':
     house_price.show()
-
 elif st.session_state.selected == 'data_analytics':
     data_analytics.show()
-
 elif st.session_state.selected == 'house_searching':
     house_searching.show()
-
 elif st.session_state.selected == 'credits':
     credits.show()
+else:
+    st.error("Invalid page selection. Please try again.")
