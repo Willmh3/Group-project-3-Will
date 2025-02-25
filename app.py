@@ -4,6 +4,7 @@ import sections.house_price as house_price
 import sections.data_analytics as data_analytics
 import sections.house_searching as house_searching
 import sections.credits as credits
+import sections.mortgage_calculator as mortgage_calculator  # Import the new module
 
 st.set_page_config(page_title="House Price Predictor", layout="wide")
 
@@ -50,6 +51,7 @@ pages = {
     "📈 House Price Predictor": "house_price",
     "📊 Data Analytics": "data_analytics",
     "🔍 House Searching": "house_searching",
+    "💰 Mortgage Calculator": "mortgage_calculator",  # Add the Mortgage Calculator
     "Credits": "credits"
 }
 
@@ -72,6 +74,8 @@ elif st.session_state.selected == 'data_analytics':
     data_analytics.show()
 elif st.session_state.selected == 'house_searching':
     house_searching.show()
+elif st.session_state.selected == 'mortgage_calculator':  # Show the Mortgage Calculator page
+    mortgage_calculator.show()
 elif st.session_state.selected == 'credits':
     credits.show()
 else:
