@@ -7,6 +7,12 @@ from prophet.diagnostics import cross_validation, performance_metrics
 from dateutil.relativedelta import relativedelta
 import os
 import glob
+import warnings
+import joblib
+
+
+# Suppress the deprecation warning
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # ====================================================
 # Part A: Data Preparation and Prophet Forecast Setup
@@ -43,12 +49,15 @@ dataframes = [pd.read_csv(file) for file in file_paths]
 combined_df = pd.concat(dataframes, ignore_index=True)
 df_all = combined_df.copy()
 
-
+# Merge df_all with df4 to get the required columns
 df_all = df_all.merge(df4[['Unique_Reference', 'tfarea', 'numberrooms', 'CURRENT_ENERGY_EFFICIENCY', 'POTENTIAL_ENERGY_EFFICIENCY']],
                      on='Unique_Reference', how='left')
+
+# Drop unnecessary columns and rows with missing values
 df_all.drop(columns=["ID", "Unique_Reference", "House_Number", "Flat_Number", "A", "A.1"], inplace=True)
 df_all.dropna(subset=['Date', 'Price', 'tfarea', 'CURRENT_ENERGY_EFFICIENCY', 'POTENTIAL_ENERGY_EFFICIENCY'], inplace=True)
 
+# Convert 'Date' to datetime and sort by date
 df_all['Date'] = pd.to_datetime(df_all['Date'], format='%Y-%m-%d %H:%M', errors='coerce')
 df_all.dropna(subset=['Date'], inplace=True)
 df_all.sort_values(by='Date', inplace=True)
@@ -58,7 +67,7 @@ df_all.reset_index(drop=True, inplace=True)
 df_all['postcode_freq'] = df_all['Postcode'].map(df_all['Postcode'].value_counts(normalize=True))
 df_all = pd.get_dummies(df_all, columns=['Region', 'Tenure_Type', 'House_Type'], drop_first=True)
 
-# Remove outliers by year.
+# Remove outliers by year
 df_all['Year'] = df_all['Date'].dt.year
 def remove_outliers(group):
     Q1 = group['Price'].quantile(0.25)
@@ -67,13 +76,18 @@ def remove_outliers(group):
     lower_bound = Q1 - 1.5 * IQR
     upper_bound = Q3 + 1.5 * IQR
     return group[(group['Price'] >= lower_bound) & (group['Price'] <= upper_bound)]
-df_all = df_all.groupby('Year', group_keys=False).apply(remove_outliers)
+
+# Fix for older versions of pandas
+df_all = df_all.groupby('Year', group_keys=False).apply(lambda group: remove_outliers(group.drop(columns=['Year'])))
+
 
 # ===============================
 # Monthly Aggregation & Time Features
 # ===============================
 df_all.set_index('Date', inplace=True)
-monthly_data = df_all.resample('M').mean(numeric_only=True).reset_index()
+
+# Fix for FutureWarning: resample('M') -> resample('ME')
+monthly_data = df_all.resample('ME').mean(numeric_only=True).reset_index()
 monthly_data['Year'] = monthly_data['Date'].dt.year
 monthly_data['Month'] = monthly_data['Date'].dt.month
 monthly_data['Year_offset'] = monthly_data['Year'] - 1995
@@ -128,7 +142,10 @@ months_to_add = (2040 - max_year_hist + 1) * 12
 future_extended = m.make_future_dataframe(periods=months_to_add, freq='MS')
 future_extended['Year'] = future_extended['ds'].dt.year
 future_extended = future_extended.merge(pop_all, on='Year', how='left')
-future_extended['Population'] = future_extended['Population'].fillna(method='ffill')
+
+# Fix for FutureWarning: fillna(method='ffill') -> ffill()
+future_extended['Population'] = future_extended['Population'].ffill()
+
 forecast_prophet = m.predict(future_extended)
 prophet_future = forecast_prophet[forecast_prophet['ds'] > prophet_df['ds'].max()][['ds', 'yhat']]
 prophet_future.rename(columns={'ds': 'Date', 'yhat': 'Prophet_Forecast'}, inplace=True)
@@ -364,19 +381,24 @@ def predict_house_price_hybrid(ds="2025-01-01",
         manual_inputs['House_Type'] = house_type
     
     return {
-        'Predicted_Price': final_prediction,
-        'Price_Range': (lower_bound, upper_bound),
+        'Predicted_Price': float(final_prediction),
+        'Price_Range': (float(lower_bound), float(upper_bound)),
         'Manual_Inputs': manual_inputs
     }
 
-# Example usage:
-prediction = predict_house_price_hybrid(ds="2026-01-01", 
-                                        tfarea=120.0, 
-                                        numberrooms=4, 
-                                        Postcode="TW12 2DH", 
-                                        region="Wandsworth",
-                                        tenure_type="Leasehold",
-                                        house_type="Flat",
-                                        alpha=0.7)
-print("\nPrediction for 2026-01-01:")
-print(prediction)
+
+
+
+#print("\nPrediction for 2026-01-01:")
+#print(prediction)
+
+#joblib.dump(m, 'prophet_model.pkl')
+#joblib.dump(xgb_res_model, 'xgb_res_model.pkl')
+# Calculate postcode frequencies
+postcode_freq = df_all['Postcode'].value_counts(normalize=True).reset_index()
+postcode_freq.columns = ['Postcode', 'Frequency']
+
+# Save to a CSV file
+#postcode_freq.to_csv('postcode_freq.csv', index=False)
+
+monthly_data.to_csv('monthly_data.csv', index=False)
