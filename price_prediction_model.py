@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import xgboost as xgb
 import matplotlib.pyplot as plt
+import glob
 from prophet import Prophet
 from prophet.diagnostics import cross_validation, performance_metrics
 from dateutil.relativedelta import relativedelta
@@ -14,16 +15,39 @@ from glob import glob
 
 # --- Load and Prepare Housing Data (df_all) ---
 
-file_path4 = r"C:\Users\BenJc\OneDrive\Group D\house_data_with_headers.csv" #######################################File path needs changing.
-df4 = pd.read_csv(file_path4)
+# Define the pattern to match all chunk files
+file_pattern = 'UltimateRR_Chunk_*.csv'
+
+# Use glob to find all files matching the pattern
+file_paths = glob.glob(file_pattern)
+
+# Read each file into a DataFrame and store them in a list
+dataframes = [pd.read_csv(file) for file in file_paths]
+
+# Concatenate all DataFrames into one
+combined_df = pd.concat(dataframes, ignore_index=True)
+
+df4 = combined_df
 df_all = df4.copy()
 
-# Extra data from folder_path3.
-folder_path3 = r"C:\Users\BenJc\OneDrive\Group D\extra data"########################################################################RR ultimate data needed in a folder
-csv_files3 = glob(os.path.join(folder_path3, "*.csv"))
-df_list3 = [pd.read_csv(file) for file in csv_files3]
-df_all3 = pd.concat(df_list3, ignore_index=True)
-df_all = df_all.merge(df_all3[['Unique_Reference', 'tfarea', 'numberrooms', 'CURRENT_ENERGY_EFFICIENCY', 'POTENTIAL_ENERGY_EFFICIENCY']],
+
+# Define the pattern to match all chunk files
+file_pattern = 'house_data_chunk_*.csv'
+
+# Use glob to find all files matching the pattern
+file_paths = glob.glob(file_pattern)
+
+# Check if all 137 files are found
+if len(file_paths) != 137:
+    print(f"Warning: Expected 137 files, but found {len(file_paths)} files.")
+
+# Read each file into a DataFrame and store them in a list
+dataframes = [pd.read_csv(file) for file in file_paths]
+
+# Concatenate all DataFrames into one
+combined_df = pd.concat(dataframes, ignore_index=True)
+
+df_all = df_all.merge(combined_df[['Unique_Reference', 'tfarea', 'numberrooms', 'CURRENT_ENERGY_EFFICIENCY', 'POTENTIAL_ENERGY_EFFICIENCY']],
                      on='Unique_Reference', how='left')
 df_all.drop(columns=["ID", "Unique_Reference", "House_Number", "Flat_Number", "A", "A.1"], inplace=True)
 df_all.dropna(subset=['Date', 'Price', 'tfarea', 'CURRENT_ENERGY_EFFICIENCY', 'POTENTIAL_ENERGY_EFFICIENCY'], inplace=True)
