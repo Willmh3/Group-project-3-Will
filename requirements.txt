@@ -4,3 +4,5 @@ folium
 streamlit-folium
 seaborn
 matplotlib
+xgboost
+prophet
