@@ -2,12 +2,11 @@ import pandas as pd
 import numpy as np
 import xgboost as xgb
 import matplotlib.pyplot as plt
-import glob
 from prophet import Prophet
 from prophet.diagnostics import cross_validation, performance_metrics
 from dateutil.relativedelta import relativedelta
 import os
-from glob import glob
+import glob
 
 # ====================================================
 # Part A: Data Preparation and Prophet Forecast Setup
@@ -25,11 +24,7 @@ file_paths = glob.glob(file_pattern)
 dataframes = [pd.read_csv(file) for file in file_paths]
 
 # Concatenate all DataFrames into one
-combined_df = pd.concat(dataframes, ignore_index=True)
-
-df4 = combined_df
-df_all = df4.copy()
-
+df4 = pd.concat(dataframes, ignore_index=True)
 
 # Define the pattern to match all chunk files
 file_pattern = 'house_data_chunk_*.csv'
@@ -46,8 +41,10 @@ dataframes = [pd.read_csv(file) for file in file_paths]
 
 # Concatenate all DataFrames into one
 combined_df = pd.concat(dataframes, ignore_index=True)
+df_all = combined_df.copy()
 
-df_all = df_all.merge(combined_df[['Unique_Reference', 'tfarea', 'numberrooms', 'CURRENT_ENERGY_EFFICIENCY', 'POTENTIAL_ENERGY_EFFICIENCY']],
+
+df_all = df_all.merge(df4[['Unique_Reference', 'tfarea', 'numberrooms', 'CURRENT_ENERGY_EFFICIENCY', 'POTENTIAL_ENERGY_EFFICIENCY']],
                      on='Unique_Reference', how='left')
 df_all.drop(columns=["ID", "Unique_Reference", "House_Number", "Flat_Number", "A", "A.1"], inplace=True)
 df_all.dropna(subset=['Date', 'Price', 'tfarea', 'CURRENT_ENERGY_EFFICIENCY', 'POTENTIAL_ENERGY_EFFICIENCY'], inplace=True)

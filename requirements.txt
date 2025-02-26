@@ -6,3 +6,5 @@ seaborn
 matplotlib
 xgboost
 prophet
+plotly
+scikit-learn
