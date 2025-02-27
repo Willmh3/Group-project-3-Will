@@ -1,6 +1,6 @@
 import streamlit as st
 import sections.home as home
-import house_price
+import sections.house_price as house_price
 import sections.data_analytics as data_analytics
 import sections.house_searching as house_searching
 import sections.credits as credits

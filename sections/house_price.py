@@ -1,24 +1,12 @@
+import streamlit as st
 import pandas as pd
-import numpy as np
-import xgboost as xgb
-import matplotlib.pyplot as plt
-from prophet import Prophet
-from prophet.diagnostics import cross_validation, performance_metrics
-from dateutil.relativedelta import relativedelta
-import os
-import glob
-import warnings
 import joblib
+from datetime import datetime
+import glob
 
-
-# Suppress the deprecation warning
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-
-# ====================================================
-# Part A: Data Preparation and Prophet Forecast Setup
-# ====================================================
-
-# --- Load and Prepare Housing Data (df_all) ---
+# Load the saved models
+prophet_model = joblib.load('prophet_model.pkl')
+xgb_res_model = joblib.load('xgb_res_model.pkl')
 
 # Define the pattern to match all chunk files
 file_pattern = 'UltimateRR_Chunk_*.csv'
@@ -93,10 +81,8 @@ monthly_data['Month'] = monthly_data['Date'].dt.month
 monthly_data['Year_offset'] = monthly_data['Year'] - 1995
 monthly_data['Year_offset_sq'] = monthly_data['Year_offset'] ** 2
 
-# ===============================
-# Incorporate London Population Data
-# ===============================
-pop_data = pd.DataFrame({
+# Define the population data
+pop_all = pd.DataFrame({
     'Year': [2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016,
              2015, 2014, 2013, 2012, 2011, 2010, 2009, 2008, 2007,
              2006, 2005, 2004, 2003, 2002, 2001, 2000, 1999, 1998,
@@ -107,81 +93,33 @@ pop_data = pd.DataFrame({
                    7668000, 7547000, 7501000, 7456000, 7411000, 7367000,
                    7322000, 7273000, 7223000, 7174000, 7126000, 7078000,
                    7030000, 6982000, 6935000, 6888000, 6841000, 6794000]
-}) #################################################################################### https://www.macrotrends.net/global-metrics/cities/22860/london/population- 25/02/2025 12:26
-pop_data = pop_data.sort_values('Year').reset_index(drop=True)
+})
+
+# Extend population data to future years (up to 2040)
 growth_rate_2025 = 0.0095
-max_year = pop_data['Year'].max()
+max_year = pop_all['Year'].max()
 future_years = list(range(max_year + 1, 2041))
 future_population = []
-last_pop = pop_data.loc[pop_data['Year'] == max_year, 'Population'].values[0]
+last_pop = pop_all.loc[pop_all['Year'] == max_year, 'Population'].values[0]
 for yr in future_years:
     last_pop = last_pop * (1 + growth_rate_2025)
     future_population.append(last_pop)
+
+# Combine historical and future population data
 pop_future = pd.DataFrame({'Year': future_years, 'Population': future_population})
-pop_all = pd.concat([pop_data, pop_future], ignore_index=True)
+pop_all = pd.concat([pop_all, pop_future], ignore_index=True)
+
+# Merge population data with monthly_data
 monthly_data = pd.merge(monthly_data, pop_all, on='Year', how='left')
 
-# ===============================
-# Prepare Data for Prophet
-# ===============================
-prophet_df = monthly_data[['Date', 'Price', 'Population']].copy()
-prophet_df.rename(columns={'Date': 'ds', 'Price': 'y'}, inplace=True)
+# Load the postcode frequency data (assuming it's saved as a CSV)
+postcode_freq = pd.read_csv('postcode_freq.csv')
 
-# ===============================
-# Fit Prophet Model (with Population as a Regressor)
-# ===============================
-m = Prophet()
-m.add_regressor('Population')
-m.fit(prophet_df)
-
-# ===============================
-# Create Future DataFrame for Prophet Until 2040
-# ===============================
-max_year_hist = prophet_df['ds'].dt.year.max()
-months_to_add = (2040 - max_year_hist + 1) * 12
-future_extended = m.make_future_dataframe(periods=months_to_add, freq='MS')
-future_extended['Year'] = future_extended['ds'].dt.year
-future_extended = future_extended.merge(pop_all, on='Year', how='left')
-
-# Fix for FutureWarning: fillna(method='ffill') -> ffill()
-future_extended['Population'] = future_extended['Population'].ffill()
-
-forecast_prophet = m.predict(future_extended)
-prophet_future = forecast_prophet[forecast_prophet['ds'] > prophet_df['ds'].max()][['ds', 'yhat']]
-prophet_future.rename(columns={'ds': 'Date', 'yhat': 'Prophet_Forecast'}, inplace=True)
-
-# ====================================================
-# Part B: Train XGBoost Residual Model on ALL Parameters
-# ====================================================
-# Compute Prophet in-sample predictions on historical data.
-prophet_in_sample = m.predict(prophet_df[['ds', 'Population']])
-# Compute residuals: actual Price - Prophet prediction.
-residuals = prophet_df['y'] - prophet_in_sample['yhat']
-
-# Build residual training dataset using all numeric predictors from monthly_data except Date and Price.
-X_res = monthly_data.drop(columns=["Date", "Price"])
-y_res = residuals.values  # Residuals corresponding to each monthly row.
-
-# Train the XGBoost residual model on all available features.
-xgb_res_model = xgb.XGBRegressor(
-    objective='reg:squarederror',
-    n_estimators=500,
-    learning_rate=0.01,
-    max_depth=4,
-    random_state=42
-)
-xgb_res_model.fit(X_res, y_res)
-
-# Save the list of features used in the residual model.
-residual_feature_cols = list(X_res.columns)
-
-# ====================================================
-# Part C: Weighted Prediction Function
-# ====================================================
-def predict_house_price_hybrid(ds, tfarea, numberrooms, CURRENT_ENERGY_EFFICIENCY, POTENTIAL_ENERGY_EFFICIENCY,
-                              Postcode, region, tenure_type, house_type, alpha=1.0):
+# Define the prediction function
+def predict_house_price_hybrid(ds, numberrooms, Postcode, region, house_type, alpha=1.0):
     """
     Predicts house price using the hybrid model (Prophet base + alpha*XGBoost residual correction).
+    Only uses postcode, borough (region), house type, and number of rooms.
     """
     import pandas as pd
 
@@ -192,25 +130,29 @@ def predict_house_price_hybrid(ds, tfarea, numberrooms, CURRENT_ENERGY_EFFICIENC
     Year_offset = Year - 1995
     Year_offset_sq = Year_offset ** 2
 
-    # Retrieve defaults from monthly_data (only numeric columns)
-    numeric_columns = monthly_data.select_dtypes(include=['number']).columns
-    defaults = monthly_data[numeric_columns].mean()
+    # Retrieve defaults for other features (not provided by the user)
+    defaults = {
+        'tfarea': 100.0,  # Default total floor area
+        'CURRENT_ENERGY_EFFICIENCY': 60.0,  # Default energy efficiency
+        'POTENTIAL_ENERGY_EFFICIENCY': 70.0,  # Default potential energy efficiency
+    }
 
+    # Prepare input values
     input_vals = {
         'ds': ds,
         'Year': Year,
         'Month': Month,
         'Year_offset': Year_offset,
         'Year_offset_sq': Year_offset_sq,
-        'tfarea': tfarea,
         'numberrooms': numberrooms,
-        'CURRENT_ENERGY_EFFICIENCY': CURRENT_ENERGY_EFFICIENCY,
-        'POTENTIAL_ENERGY_EFFICIENCY': POTENTIAL_ENERGY_EFFICIENCY,
+        'tfarea': defaults['tfarea'],
+        'CURRENT_ENERGY_EFFICIENCY': defaults['CURRENT_ENERGY_EFFICIENCY'],
+        'POTENTIAL_ENERGY_EFFICIENCY': defaults['POTENTIAL_ENERGY_EFFICIENCY'],
         'postcode_freq': postcode_freq[postcode_freq['Postcode'] == Postcode]['Frequency'].values[0] if Postcode in postcode_freq['Postcode'].values else postcode_freq['Frequency'].mean(),
         'Population': pop_all.loc[pop_all['Year'] == Year, 'Population'].values[0]
     }
 
-    # Add encoded features
+    # Add encoded features for region, tenure type, and house type
     encoded_features = [col for col in monthly_data.columns if col.startswith('Region_') or 
                         col.startswith('Tenure_Type_') or col.startswith('House_Type_')]
     encoded_vals = {feat: 0.0 for feat in encoded_features}
@@ -221,13 +163,6 @@ def predict_house_price_hybrid(ds, tfarea, numberrooms, CURRENT_ENERGY_EFFICIENC
         for feat in encoded_features:
             if feat.startswith("Region_"):
                 encoded_vals[feat] = 1.0 if feat.split("Region_")[1].upper() == desired_region else 0.0
-
-    # Update for tenure type
-    if tenure_type is not None:
-        desired_tenure = tenure_type.upper()
-        for feat in encoded_features:
-            if feat.startswith("TENURE_TYPE_"):
-                encoded_vals[feat] = 1.0 if feat.split("TENURE_TYPE_")[1].upper() == desired_tenure else 0.0
 
     # Update for house type
     if house_type is not None:
@@ -260,11 +195,39 @@ def predict_house_price_hybrid(ds, tfarea, numberrooms, CURRENT_ENERGY_EFFICIENC
         'Price_Range': (float(lower_bound), float(upper_bound))
     }
 
+# Streamlit UI
+def show():
+    st.title("House Price Prediction")
 
+    # Input form
+    with st.form("house_price_form"):
+        st.write("Enter the details of the house:")
+        
+        # Collect only the required inputs
+        postcode = st.text_input("Postcode")
+        region = st.text_input("Borough")
+        house_type = st.text_input("House Type")
+        numberrooms = st.number_input("Number of Rooms", min_value=1, max_value=10)
+        
+        submitted = st.form_submit_button("Predict Price")
 
-#print("\nPrediction for 2026-01-01:")
-#print(prediction)
+    if submitted:
+        # Use the current date for prediction
+        date = datetime.now()
 
-#joblib.dump(m, 'prophet_model.pkl')
-#joblib.dump(xgb_res_model, 'xgb_res_model.pkl')
+        # Call the prediction function
+        prediction = predict_house_price_hybrid(
+            ds=date,
+            numberrooms=numberrooms,
+            Postcode=postcode,
+            region=region,
+            house_type=house_type
+        )
+        
+        # Display the prediction
+        st.write(f"Predicted Price: £{prediction['Predicted_Price']:,.2f}")
+        st.write(f"Price Range: £{prediction['Price_Range'][0]:,.2f} - £{prediction['Price_Range'][1]:,.2f}")
 
+# Run the main function
+if __name__ == "__main__":
+    show()
