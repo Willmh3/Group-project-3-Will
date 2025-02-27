@@ -178,8 +178,7 @@ residual_feature_cols = list(X_res.columns)
 # ====================================================
 # Part C: Weighted Prediction Function
 # ====================================================
-def predict_house_price_hybrid(ds, tfarea, numberrooms, CURRENT_ENERGY_EFFICIENCY, POTENTIAL_ENERGY_EFFICIENCY,
-                              Postcode, region, tenure_type, house_type, alpha=1.0):
+def predict_house_price_hybrid(ds, numberrooms, Postcode, region, house_type, tfarea, CURRENT_ENERGY_EFFICIENCY, POTENTIAL_ENERGY_EFFICIENCY, alpha=1.0):
     """
     Predicts house price using the hybrid model (Prophet base + alpha*XGBoost residual correction).
     """
@@ -192,25 +191,22 @@ def predict_house_price_hybrid(ds, tfarea, numberrooms, CURRENT_ENERGY_EFFICIENC
     Year_offset = Year - 1995
     Year_offset_sq = Year_offset ** 2
 
-    # Retrieve defaults from monthly_data (only numeric columns)
-    numeric_columns = monthly_data.select_dtypes(include=['number']).columns
-    defaults = monthly_data[numeric_columns].mean()
-
+    # Prepare input values
     input_vals = {
         'ds': ds,
         'Year': Year,
         'Month': Month,
         'Year_offset': Year_offset,
         'Year_offset_sq': Year_offset_sq,
-        'tfarea': tfarea,
         'numberrooms': numberrooms,
+        'tfarea': tfarea,
         'CURRENT_ENERGY_EFFICIENCY': CURRENT_ENERGY_EFFICIENCY,
         'POTENTIAL_ENERGY_EFFICIENCY': POTENTIAL_ENERGY_EFFICIENCY,
         'postcode_freq': postcode_freq[postcode_freq['Postcode'] == Postcode]['Frequency'].values[0] if Postcode in postcode_freq['Postcode'].values else postcode_freq['Frequency'].mean(),
         'Population': pop_all.loc[pop_all['Year'] == Year, 'Population'].values[0]
     }
 
-    # Add encoded features
+    # Add encoded features for region, tenure type, and house type
     encoded_features = [col for col in monthly_data.columns if col.startswith('Region_') or 
                         col.startswith('Tenure_Type_') or col.startswith('House_Type_')]
     encoded_vals = {feat: 0.0 for feat in encoded_features}
@@ -221,13 +217,6 @@ def predict_house_price_hybrid(ds, tfarea, numberrooms, CURRENT_ENERGY_EFFICIENC
         for feat in encoded_features:
             if feat.startswith("Region_"):
                 encoded_vals[feat] = 1.0 if feat.split("Region_")[1].upper() == desired_region else 0.0
-
-    # Update for tenure type
-    if tenure_type is not None:
-        desired_tenure = tenure_type.upper()
-        for feat in encoded_features:
-            if feat.startswith("TENURE_TYPE_"):
-                encoded_vals[feat] = 1.0 if feat.split("TENURE_TYPE_")[1].upper() == desired_tenure else 0.0
 
     # Update for house type
     if house_type is not None:

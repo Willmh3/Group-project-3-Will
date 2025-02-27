@@ -8,6 +8,9 @@ import glob
 prophet_model = joblib.load('prophet_model.pkl')
 xgb_res_model = joblib.load('xgb_res_model.pkl')
 
+# Load the FinalData.parquet file
+df = pd.read_parquet('FinalData.parquet')
+
 # Define the pattern to match all chunk files
 file_pattern = 'UltimateRR_Chunk_*.csv'
 
@@ -115,11 +118,39 @@ monthly_data = pd.merge(monthly_data, pop_all, on='Year', how='left')
 # Load the postcode frequency data (assuming it's saved as a CSV)
 postcode_freq = pd.read_csv('postcode_freq.csv')
 
+# Function to extract features from the dataset
+def extract_features(postcode, street_name=None, house_number=None, flat_number=None):
+    """
+    Extract features from the dataset based on user inputs.
+    If only postcode is provided, compute average values for that postcode.
+    """
+    # Filter the dataset based on the postcode
+    filtered_df = df[df['postcode'] == postcode]
+
+    # If street name, house number, or flat number are provided, further filter the dataset
+    if street_name:
+        filtered_df = filtered_df[filtered_df['Street_Name'] == street_name]
+    if house_number:
+        filtered_df = filtered_df[filtered_df['House_Number'] == house_number]
+    if flat_number:
+        filtered_df = filtered_df[filtered_df['Flat_Number'] == flat_number]
+
+    # If no matching rows are found, return None
+    if filtered_df.empty:
+        return None
+
+    # Compute average values for the filtered dataset
+    avg_values = filtered_df[[
+        'numberOfBedrooms', 'CURRENT_ENERGY_EFFICIENCY', 'POTENTIAL_ENERGY_EFFICIENCY',
+        'tfarea', 'latitude', 'longitude', '£PSqFt', 'borough', 'house_Type'
+    ]].mean()
+
+    return avg_values
+
 # Define the prediction function
-def predict_house_price_hybrid(ds, numberrooms, Postcode, region, house_type, alpha=1.0):
+def predict_house_price_hybrid(ds, numberrooms, Postcode, region, house_type, tfarea, CURRENT_ENERGY_EFFICIENCY, POTENTIAL_ENERGY_EFFICIENCY, alpha=1.0):
     """
     Predicts house price using the hybrid model (Prophet base + alpha*XGBoost residual correction).
-    Only uses postcode, borough (region), house type, and number of rooms.
     """
     import pandas as pd
 
@@ -130,13 +161,6 @@ def predict_house_price_hybrid(ds, numberrooms, Postcode, region, house_type, al
     Year_offset = Year - 1995
     Year_offset_sq = Year_offset ** 2
 
-    # Retrieve defaults for other features (not provided by the user)
-    defaults = {
-        'tfarea': 100.0,  # Default total floor area
-        'CURRENT_ENERGY_EFFICIENCY': 60.0,  # Default energy efficiency
-        'POTENTIAL_ENERGY_EFFICIENCY': 70.0,  # Default potential energy efficiency
-    }
-
     # Prepare input values
     input_vals = {
         'ds': ds,
@@ -145,9 +169,9 @@ def predict_house_price_hybrid(ds, numberrooms, Postcode, region, house_type, al
         'Year_offset': Year_offset,
         'Year_offset_sq': Year_offset_sq,
         'numberrooms': numberrooms,
-        'tfarea': defaults['tfarea'],
-        'CURRENT_ENERGY_EFFICIENCY': defaults['CURRENT_ENERGY_EFFICIENCY'],
-        'POTENTIAL_ENERGY_EFFICIENCY': defaults['POTENTIAL_ENERGY_EFFICIENCY'],
+        'tfarea': tfarea,
+        'CURRENT_ENERGY_EFFICIENCY': CURRENT_ENERGY_EFFICIENCY,
+        'POTENTIAL_ENERGY_EFFICIENCY': POTENTIAL_ENERGY_EFFICIENCY,
         'postcode_freq': postcode_freq[postcode_freq['Postcode'] == Postcode]['Frequency'].values[0] if Postcode in postcode_freq['Postcode'].values else postcode_freq['Frequency'].mean(),
         'Population': pop_all.loc[pop_all['Year'] == Year, 'Population'].values[0]
     }
@@ -203,30 +227,39 @@ def show():
     with st.form("house_price_form"):
         st.write("Enter the details of the house:")
         
-        # Collect only the required inputs
+        # Collect user inputs
         postcode = st.text_input("Postcode")
-        region = st.text_input("Borough")
-        house_type = st.text_input("House Type")
-        numberrooms = st.number_input("Number of Rooms", min_value=1, max_value=10)
+        street_name = st.text_input("Street Name (optional)")
+        house_number = st.text_input("House Number (optional)")
+        flat_number = st.text_input("Flat Number (optional)")
         
         submitted = st.form_submit_button("Predict Price")
 
     if submitted:
-        # Use the current date for prediction
-        date = datetime.now()
+        # Extract features based on user inputs
+        features = extract_features(postcode, street_name, house_number, flat_number)
 
-        # Call the prediction function
-        prediction = predict_house_price_hybrid(
-            ds=date,
-            numberrooms=numberrooms,
-            Postcode=postcode,
-            region=region,
-            house_type=house_type
-        )
-        
-        # Display the prediction
-        st.write(f"Predicted Price: £{prediction['Predicted_Price']:,.2f}")
-        st.write(f"Price Range: £{prediction['Price_Range'][0]:,.2f} - £{prediction['Price_Range'][1]:,.2f}")
+        if features is not None:
+            st.write("Extracted Features:")
+            st.write(features)
+
+            # Use the extracted features as inputs for the XGBoost/Prophet model
+            prediction = predict_house_price_hybrid(
+                ds=datetime.now(),
+                numberrooms=features['numberOfBedrooms'],
+                Postcode=postcode,
+                region=features['borough'],
+                house_type=features['house_Type'],
+                tfarea=features['tfarea'],
+                CURRENT_ENERGY_EFFICIENCY=features['CURRENT_ENERGY_EFFICIENCY'],
+                POTENTIAL_ENERGY_EFFICIENCY=features['POTENTIAL_ENERGY_EFFICIENCY']
+            )
+            
+            # Display the prediction
+            st.write(f"Predicted Price: £{prediction['Predicted_Price']:,.2f}")
+            st.write(f"Price Range: £{prediction['Price_Range'][0]:,.2f} - £{prediction['Price_Range'][1]:,.2f}")
+        else:
+            st.error("No matching data found for the provided inputs.")
 
 # Run the main function
 if __name__ == "__main__":
