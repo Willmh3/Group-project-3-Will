@@ -1,11 +1,11 @@
 import streamlit as st
 import sections.home as home
-import sections.house_price as house_price
+import house_price
 import sections.data_analytics as data_analytics
 import sections.house_searching as house_searching
 import sections.credits as credits
 import sections.mortgage_calculator as mortgage_calculator  # Import the new module
-
+import glob
 st.set_page_config(page_title="House Price Predictor", layout="wide")
 
 # Maroon top bar

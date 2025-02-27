@@ -270,8 +270,3 @@ def predict_house_price_hybrid(ds, tfarea, numberrooms, CURRENT_ENERGY_EFFICIENC
 # Calculate postcode frequencies
 postcode_freq = df_all['Postcode'].value_counts(normalize=True).reset_index()
 postcode_freq.columns = ['Postcode', 'Frequency']
-
-# Save to a CSV file
-#postcode_freq.to_csv('postcode_freq.csv', index=False)
-
-monthly_data.to_csv('monthly_data.csv', index=False)
