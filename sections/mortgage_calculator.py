@@ -1,94 +1,134 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
+import datetime
+import math
 
-def calculate_mortgage(principal, interest_rate, loan_term_years):
-    """
-    Calculate the monthly mortgage payment using the formula for a fixed-rate mortgage.
-    """
-    # Convert annual interest rate to monthly and loan term to months
-    monthly_interest_rate = (interest_rate / 100) / 12
-    loan_term_months = loan_term_years * 12
-
-    # Calculate monthly payment
-    if monthly_interest_rate == 0:
-        monthly_payment = principal / loan_term_months
+# Function to determine loan term based on tenure type
+def estimate_loan_term(tenure_type):
+    if tenure_type == 'F':  # Freehold
+        return 30  # Standard mortgage term
+    elif tenure_type == 'L':  # Leasehold
+        return 50  # Default assumption
+    elif tenure_type == 'U':  # Unknown
+        return 25  # Default assumption
     else:
-        monthly_payment = principal * (monthly_interest_rate * (1 + monthly_interest_rate) ** loan_term_months) / ((1 + monthly_interest_rate) ** loan_term_months - 1)
+        raise ValueError("Invalid tenure type. Use 'L', 'F', or 'U'.")
 
-    return monthly_payment
+# Function to calculate mortgage payment with sensitivity analysis
+def mortgage_payments(pred_price, loan_term, i, dp=0.015):
+    down_payment = pred_price * dp
+    loan_amount = pred_price - down_payment
+    months = loan_term * 12
+    
+    # Sensitivity Analysis: ±0.5% around given interest rate
+    sensitivity_rates = [i - 0.005, i, i + 0.005]  # ±0.5% variation
+    mortgage_payments = {}
 
-def estimate_future_price(current_price, annual_growth_rate, years):
+    for rate in sensitivity_rates:
+        monthly_rate = rate / 12
+        M = loan_amount * (monthly_rate * (1 + monthly_rate) ** months) / ((1 + monthly_rate) ** months - 1)
+        mortgage_payments[f"{rate*100:.2f}%"] = M
+
+    return mortgage_payments
+
+# Function to calculate mortgage payments for a given date
+def projected_mortgage_payment(pred_price, loan_term, interest_rates, target_date):
+    today = datetime.date.today()
+    target_year = target_date.year
+    current_year = today.year
+    
+    years_diff = max(1, math.ceil(target_year - current_year))  # Round up
+    
+    # Extend interest_rates list if it's shorter than years_diff
+    if years_diff > len(interest_rates):
+        last_rate = interest_rates[-1]  # Use the last available rate
+        interest_rates.extend([last_rate] * (years_diff - len(interest_rates)))
+    
+    selected_rate = interest_rates[years_diff - 1]  # Select corresponding interest rate
+    results = mortgage_payments(pred_price, loan_term, selected_rate)
+    return target_year, results  # Return the prediction year
+
+# Function to create a color-coded table without an index
+def display_colored_mortgage_table(prediction_year, results):
     """
-    Estimate the future price of a house based on an annual growth rate.
+    Converts mortgage payments dictionary into a Pandas DataFrame with alternating color formatting.
     """
-    future_price = current_price * (1 + annual_growth_rate / 100) ** years
-    return future_price
+    table_data = []
 
+    for rate, amount in results.items():
+        table_data.append([prediction_year, f"{float(rate.strip('%')):.2f}", f"£{amount:,.2f}"])
+
+    df = pd.DataFrame(table_data, columns=["Year", "Interest Rate (%)", "Monthly Payment (£)"])
+
+    def highlight_cells(row):
+        index = row.name  # Get row index
+        if index % 3 == 0:
+            return ['background-color: lightgreen; color: black'] * len(row)  # Green with black text
+        elif index % 3 == 1:
+            return ['background-color: white; color: black'] * len(row)  # White with black text
+        else:
+            return ['background-color: salmon; color: black'] * len(row)  # Red with black text
+
+    styled_df = df.style.apply(highlight_cells, axis=1).hide(axis="index")  # Hide index
+    
+    return styled_df
+
+# Streamlit UI
 def show():
-    st.title("🏠 Mortgage Calculator")
-    st.write("Calculate your monthly mortgage payments and compare them to the estimated future price of a house.")
-
-    # Input fields for mortgage calculation
-    st.subheader("Mortgage Details")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        house_price = st.number_input("House Price (£)", min_value=0, value=300000, step=10000)
-    with col2:
-        deposit = st.number_input("Deposit (£) (optional)", min_value=0, value=0, step=10000)  # Optional deposit, default to 0
-    with col3:
-        loan_term_years = st.slider("Loan Term (Years)", min_value=5, max_value=30, value=25, step=1)
-
-    col1, col2 = st.columns(2)
-    with col1:
-        interest_rate = st.slider("Interest Rate (%)", min_value=0.1, max_value=10.0, value=4.5, step=0.1)
-    with col2:
-        annual_growth_rate = st.slider("Annual House Price Growth Rate (%)", min_value=0.0, max_value=10.0, value=3.0, step=0.1)
-
-    # Calculate mortgage
-    principal = house_price - deposit  # Deposit is optional, default is 0
-    monthly_payment = calculate_mortgage(principal, interest_rate, loan_term_years)
-    total_payment = monthly_payment * loan_term_years * 12
-
-    # Estimate future house price
-    future_price = estimate_future_price(house_price, annual_growth_rate, years=15)
-
-    # Display results with improved styling
-    st.subheader("Results")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown(
-            f"<div style='padding: 20px; border-radius: 10px; background-color: #f8f9fa; text-align: center;'>"
-            f"<h3 style='color: #333333;'>Monthly Mortgage Payment</h3>"
-            f"<p style='font-size: 24px; font-weight: bold; color: #000000;'>£{monthly_payment:,.2f}</p>"
-            f"</div>",
-            unsafe_allow_html=True
+    st.title("Mortgage Calculator")
+    
+    # Input form
+    with st.form("mortgage_form"):
+        st.write("Enter the details of the mortgage:")
+        
+        # Collect user inputs
+        house_price = st.number_input("House Price (£)", min_value=0.0, value=320000.0, step=1000.0)
+        tenure_type = st.selectbox("Tenure Type", ["Freehold (F)", "Leasehold (L)", "Unknown (U)"], index=0)
+        
+        # Checkbox to toggle custom loan length input
+        use_custom_loan_length = st.checkbox(
+            "Input custom loan length (in years)",
+            value=False,  # Default to unchecked
+            key="use_custom_loan_length"
         )
-    with col2:
-        st.markdown(
-            f"<div style='padding: 20px; border-radius: 10px; background-color: #f8f9fa; text-align: center;'>"
-            f"<h3 style='color: #333333;'>Total Mortgage Cost</h3>"
-            f"<p style='font-size: 24px; font-weight: bold; color: #000000;'>£{total_payment:,.2f}</p>"
-            f"</div>",
-            unsafe_allow_html=True
+        
+        # Always display the loan length input box
+        loan_length = st.number_input(
+            "Desired Loan Length (years)",
+            min_value=1,
+            max_value=50,
+            value=25,  # Default value
+            step=1,
+            disabled=not use_custom_loan_length  # Disable if checkbox is unchecked
         )
+        
+        # If checkbox is unchecked, calculate loan length based on tenure type
+        if not use_custom_loan_length:
+            tenure_code = tenure_type.split(" ")[1].strip("()")
+            loan_length = estimate_loan_term(tenure_code)
+        
+        # Example interest rates (can be replaced with dynamic data)
+        interest_rates = [0.04344, 0.04252, 0.03973, 0.04166, 0.0428, 0.0418, 0.04325, 0.0442, 0.049, 0.0493, 0.0493, 0.0468, 0.0468, 0.0468, 0.04898]
+        
+        submitted = st.form_submit_button("Calculate Mortgage Payments")
 
-    st.subheader("Future House Price Estimate")
-    st.write(f"Based on an annual growth rate of {annual_growth_rate}%, the estimated price of the house in 15 years is:")
-    st.markdown(
-        f"<div style='padding: 20px; border-radius: 10px; background-color: #f8f9fa; text-align: center;'>"
-        f"<p style='font-size: 24px; font-weight: bold; color: #000000;'>£{future_price:,.2f}</p>"
-        f"</div>",
-        unsafe_allow_html=True
-    )
+        if submitted:
+            try:
+                # Calculate target date based on loan length
+                today = datetime.date.today()
+                target_date = today + datetime.timedelta(days=loan_length * 365)
+                
+                # Run the function to get mortgage payments
+                prediction_year, results = projected_mortgage_payment(house_price, loan_length, interest_rates, target_date)
+                
+                # Display the color-coded mortgage table
+                st.subheader("Mortgage Payment Projections")
+                styled_table = display_colored_mortgage_table(prediction_year, results)
+                st.dataframe(styled_table, use_container_width=True)
+            
+            except ValueError as e:
+                st.error(f"Error: {str(e)}")
 
-    # Comparison
-    st.subheader("Comparison")
-    st.write(f"After 15 years, your total mortgage payments will be £{total_payment:,.2f}, and the estimated house price will be £{future_price:,.2f}.")
-    if future_price > total_payment:
-        st.success("The estimated house price is higher than your total mortgage payments. This is a good investment!")
-    else:
-        st.warning("The estimated house price is lower than your total mortgage payments. Consider other options.")
-
-if __name__ == "_main_":
+# Run the main function
+if __name__ == "__main__":
     show()
