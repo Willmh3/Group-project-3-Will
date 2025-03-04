@@ -1,99 +1,156 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import os
-import seaborn as sns
-from matplotlib.ticker import FuncFormatter
+import plotly.express as px
 import re
+from functools import lru_cache
+import glob
 
-@st.cache_data
-def load_price_growth_data(postcode, years_to_load):
-    base_path = "split_datasets"
-    data_list = []
+# List of valid London boroughs
+valid_london_boroughs = [
+    "Barking and Dagenham", "Barnet", "Bexley", "Brent", "Bromley", "Camden", 
+    "Croydon", "Ealing", "Enfield", "Greenwich", "Hackney", "Hammersmith and Fulham", 
+    "Haringey", "Harrow", "Havering", "Hillingdon", "Hounslow", "Islington", 
+    "Kensington and Chelsea", "Kingston upon Thames", "Lambeth", "Lewisham", 
+    "Merton", "Newham", "Redbridge", "Richmond upon Thames", "Southwark", 
+    "Sutton", "Tower Hamlets", "Waltham Forest", "Wandsworth", "Westminster"
+]
 
-    for year in years_to_load:
-        file_path = os.path.join(base_path, f"sales_{year}.csv")
-        if os.path.exists(file_path):
-            df = pd.read_csv(file_path, usecols=["Date", "Postcode", "Price"])
-            df["Postcode"] = df["Postcode"].str.strip().str.upper()
-            df = df[df["Postcode"] == postcode.upper()]
-            df["Year"] = pd.to_datetime(df["Date"], errors='coerce').dt.year
-            data_list.append(df)
-        else:
-            st.warning(f"Missing data file: {file_path}")
+# Mapping for house types
+house_type_mapping = {
+    "F": "Flat",
+    "D": "Detached",
+    "T": "Terraced",
+    "S": "Semi-Detached",
+    "O": "Other"
+}
 
-    if data_list:
-        full_data = pd.concat(data_list)
-        if not full_data.empty:
-            avg_prices = full_data.groupby("Year")["Price"].mean().reset_index()
-            return avg_prices
-        else:
-            st.warning("No data available for the selected years.")
-            return pd.DataFrame({"Year": [], "Price": []})
-    else:
-        st.warning("No data files were found for the selected years.")
-        return pd.DataFrame({"Year": [], "Price": []})
+@lru_cache(maxsize=1)
+def load_data():
+    """
+    Load and preprocess housing data with caching to improve performance.
+    """
+    try:
+        # Simulate loading multiple CSV files (replace with actual data loading)
+        csv_files = sorted(glob.glob("split_*.csv"))
+        if not csv_files:
+            st.error("No CSV files found.")
+            return pd.DataFrame()
+        
+        df_list = [pd.read_csv(file) for file in csv_files]
+        full_data = pd.concat(df_list, ignore_index=True)
 
-def currency_formatter(x, pos):
-    return f"£{x:,.0f}"
+        # Rename columns
+        full_data = full_data.rename(columns={
+            "NEWCASTLE.UPON.TYNE.1": "Region",
+            "S": "House_Type",
+            "X42000": "Price",
+            "NE4.9DN": "Postcode",
+            "Date": "Date"
+        })
 
-def is_valid_uk_postcode(postcode):
-    pattern = r"^([A-Za-z]{1,2}\d{1,2}[A-Za-z]? \d[A-Za-z]{2})$"
+        # Convert and clean data
+        full_data["Postcode"] = full_data["Postcode"].astype(str).str.upper()
+        full_data["Region"] = full_data["Region"].str.title()
+        full_data["Price"] = pd.to_numeric(full_data["Price"], errors="coerce")
+        full_data["House_Type"] = full_data["House_Type"].map(house_type_mapping).fillna("Unknown")
+
+        # Convert date column to datetime format
+        full_data["Year"] = pd.to_datetime(full_data["Date"], errors="coerce").dt.year
+        
+        return full_data
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return pd.DataFrame()
+
+def is_valid_postcode(postcode):
+    """Basic UK postcode validation."""
+    pattern = r"^[A-Z]{1,2}[0-9R][0-9A-Z]? [0-9][A-Z]{2}$"
     return re.match(pattern, postcode) is not None
 
 def show():
-    st.title("Data Analytics")
+    """Main function to display the analytics dashboard."""
+    st.title("📊 Data Analytics Dashboard")
 
-    analytics_option = st.selectbox(
-        "Choose an option for data analytics:",
-        ["House Growth", "Crime Rate", "Average Price"]
-    )
+    # Filters
+    st.header("Filters")
+    col1, col2, col3 = st.columns(3)
 
-    postcode = st.text_input("Enter Postcode for Analysis", max_chars=10)
+    with col1:
+        boroughs = ["All"] + sorted(valid_london_boroughs)
+        selected_borough = st.selectbox("🏙 Select Borough", boroughs, key="borough_select")
+    
+    with col2:
+        house_types = ["All"] + list(house_type_mapping.values())
+        selected_house_type = st.selectbox("🏠 Select House Type", house_types, key="house_type_select")
 
-    if analytics_option == "House Growth":
-        graph_range = st.selectbox("Select Graph Range:", ["Last 5 Years (2020-2024)", "Last 10 Years (2015-2024)"])
-        
-        if postcode:
-            if not is_valid_uk_postcode(postcode):
-                st.error("Please enter a valid UK postcode.")
-            else:
-                with st.spinner("Loading data..."):
-                    if graph_range == "Last 5 Years (2020-2024)":
-                        df = load_price_growth_data(postcode, range(2020, 2025))
-                    else:
-                        df = load_price_growth_data(postcode, range(2015, 2025))
+    with col3:
+        postcode = st.text_input("📍 Enter Postcode", placeholder="e.g., SW1A 1AA", key="postcode_input").strip().upper()
 
-                if not df.empty:
-                    sns.set_style("whitegrid")
-                    fig, ax = plt.subplots(figsize=(10, 6))
-                    sns.lineplot(data=df, x="Year", y="Price", marker='o', color='maroon', linewidth=2.5, ax=ax)
+    # Load data when button is pressed
+    if st.button("Apply Filters", type="primary"):
+        with st.spinner("Loading data..."):
+            full_data = load_data()
+            
+            # Apply filters
+            filtered_data = full_data.copy()
+            
+            if selected_borough != "All":
+                filtered_data = filtered_data[filtered_data["Region"] == selected_borough]
+            
+            if selected_house_type != "All":
+                filtered_data = filtered_data[filtered_data["House_Type"] == selected_house_type]
+            
+            if postcode and is_valid_postcode(postcode):
+                filtered_data = filtered_data[filtered_data["Postcode"] == postcode]
 
-                    ax.set_xticks(df["Year"].unique())
-                    ax.set_xticklabels(df["Year"].unique(), fontsize=12)
-                    ax.yaxis.set_major_formatter(FuncFormatter(currency_formatter))
+            # Key Metrics
+            st.header("Key Metrics")
+            col1, col2 = st.columns(2)
 
-                    ax.set_title(f"House Price Growth in {postcode}", fontsize=16, fontweight='bold')
-                    ax.set_xlabel("Year", fontsize=14)
-                    ax.set_ylabel("Average Price (£)", fontsize=14)
-                    ax.grid(True, linestyle='--', alpha=0.7)
+            with col1:
+                num_houses = filtered_data.shape[0]
+                st.metric(label="📊 Data Points", value=f"{num_houses:,}")
 
-                    max_price = df["Price"].max()
-                    min_price = df["Price"].min()
-                    ax.annotate(f"Max: £{max_price:,.0f}", 
-                                xy=(df.loc[df["Price"].idxmax(), "Year"], max_price),
-                                xytext=(10, 20), textcoords='offset points',
-                                arrowprops=dict(arrowstyle="->", color='black'),
-                                bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", lw=1))
-                    ax.annotate(f"Min: £{min_price:,.0f}", 
-                                xy=(df.loc[df["Price"].idxmin(), "Year"], min_price),
-                                xytext=(10, -40), textcoords='offset points',
-                                arrowprops=dict(arrowstyle="->", color='black'),
-                                bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", lw=1))
+                lower_quartile = filtered_data["Price"].quantile(0.25) if not filtered_data.empty else 0
+                st.metric(label="🔻 Lower Quartile Price", value=f"£{lower_quartile:,.0f}")
+            
+                avg_price = filtered_data["Price"].mean() if not filtered_data.empty else 0
+                st.metric(label="🏠 Mean House Price", value=f"£{avg_price:,.0f}")
+            
+                upper_quartile = filtered_data["Price"].quantile(0.75) if not filtered_data.empty else 0
+                st.metric(label="🔺 Upper Quartile Price", value=f"£{upper_quartile:,.0f}")
 
-                    st.pyplot(fig)
+            with col2:
+                if not filtered_data.empty:
+                    house_type_counts = filtered_data["House_Type"].value_counts()
+                    fig = px.pie(house_type_counts, names=house_type_counts.index, values=house_type_counts.values, title="House Type Distribution")
+                    st.plotly_chart(fig, use_container_width=True)
                 else:
-                    st.warning(f"No data available for postcode {postcode}. Please check the postcode or try another one.")
-    elif analytics_option in ["Crime Rate", "Average Price"]:
-        st.subheader(f"{analytics_option} Analysis")
-        st.write("Display relevant analytics here.")
+                    st.warning("No data found matching the selected filters.")
+
+            # Liquidity Plot (Only if a postcode is entered)
+            if postcode and is_valid_postcode(postcode):
+                st.header("📉 Liquidity Over Time")
+                liquidity_data = filtered_data.groupby("Year")["Postcode"].count().reset_index()
+                liquidity_data.rename(columns={"Postcode": "Houses Sold"}, inplace=True)
+
+                liquidity_data = liquidity_data[(liquidity_data["Year"] >= 2005) & (liquidity_data["Year"] <= 2024)]
+
+                if not liquidity_data.empty:
+                    fig_liquidity = px.line(liquidity_data, x="Year", y="Houses Sold", title="Houses Sold Per Year (Liquidity)")
+                    fig_liquidity.update_traces(mode="lines+markers")
+                    st.plotly_chart(fig_liquidity, use_container_width=True)
+                else:
+                    st.warning("No sales data available for this postcode between 2005-2024.")
+
+            # Download Button
+            st.header("Download Filtered Data")
+            csv_data = filtered_data.to_csv(index=False).encode("utf-8")
+            st.download_button(label="📥 Download CSV", data=csv_data, file_name="filtered_data.csv", mime="text/csv")
+
+    st.markdown("---")
+    st.markdown("📍 *Note:* This dashboard uses real data from split_*.csv.")
+
+# For direct script execution
+if __name__ == "__main__":
+    show()
