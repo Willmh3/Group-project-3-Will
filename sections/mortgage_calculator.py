@@ -2,132 +2,262 @@ import streamlit as st
 import pandas as pd
 import datetime
 import math
+import plotly.graph_objs as plt
 
-# Function to determine loan term based on tenure type
+# Import the necessary functions from the house price prediction script
+from sections.house_price import extract_features, predict_house_price_hybrid, load_data, load_models, load_population_data, load_postcode_freq, load_encoded_features, load_scale_factors
+
 def estimate_loan_term(tenure_type):
-    if tenure_type == 'F':  # Freehold
-        return 30  # Standard mortgage term
-    elif tenure_type == 'L':  # Leasehold
-        return 50  # Default assumption
-    elif tenure_type == 'U':  # Unknown
-        return 25  # Default assumption
-    else:
-        raise ValueError("Invalid tenure type. Use 'L', 'F', or 'U'.")
+    """Recommend loan term based on property tenure type."""
+    tenure_terms = {
+        'F': 30,   # Freehold: standard 30-year mortgage
+        'L': 25,   # Leasehold: slightly shorter term
+        'U': 25    # Unknown: conservative estimate
+    }
+    return tenure_terms.get(tenure_type, 25)
 
-# Function to calculate mortgage payment with sensitivity analysis
-def mortgage_payments(pred_price, loan_term, i, dp=0.015):
-    down_payment = pred_price * dp
-    loan_amount = pred_price - down_payment
-    months = loan_term * 12
+def mortgage_payments(pred_price, interest_rates, target_date, dp=0.10, dp_variation=0.015):
+    """
+    Calculate mortgage payments with sensitivity analysis using predefined interest rates.
     
-    # Sensitivity Analysis: ±0.5% around given interest rate
-    sensitivity_rates = [i - 0.005, i, i + 0.005]  # ±0.5% variation
-    mortgage_payments = {}
-
-    for rate in sensitivity_rates:
-        monthly_rate = rate / 12
-        M = loan_amount * (monthly_rate * (1 + monthly_rate) ** months) / ((1 + monthly_rate) ** months - 1)
-        mortgage_payments[f"{rate*100:.2f}%"] = M
-
-    return mortgage_payments
-
-# Function to calculate mortgage payments for a given date
-def projected_mortgage_payment(pred_price, loan_term, interest_rates, target_date):
+    Args:
+    - pred_price: Property price
+    - interest_rates: Predefined list of interest rates
+    - target_date: Date for which to select interest rate
+    - dp: Deposit percentage (default 10%)
+    - dp_variation: Deposit percentage variation
+    
+    Returns:
+    Dictionary of mortgage payments with different scenarios
+    """
     today = datetime.date.today()
     target_year = target_date.year
     current_year = today.year
     
     years_diff = max(1, math.ceil(target_year - current_year))  # Round up
     
-    # Extend interest_rates list if it's shorter than years_diff
+    # Use the last interest rate if target year is beyond available rates
     if years_diff > len(interest_rates):
-        last_rate = interest_rates[-1]  # Use the last available rate
-        interest_rates.extend([last_rate] * (years_diff - len(interest_rates)))
+        selected_rate = interest_rates[-1]
+    else:
+        selected_rate = interest_rates[years_diff - 1]
     
-    selected_rate = interest_rates[years_diff - 1]  # Select corresponding interest rate
-    results = mortgage_payments(pred_price, loan_term, selected_rate)
-    return target_year, results  # Return the prediction year
-
-# Function to create a color-coded table without an index
-def display_colored_mortgage_table(prediction_year, results):
-    """
-    Converts mortgage payments dictionary into a Pandas DataFrame with alternating color formatting.
-    """
-    table_data = []
-
-    for rate, amount in results.items():
-        table_data.append([prediction_year, f"{float(rate.strip('%')):.2f}", f"£{amount:,.2f}"])
-
-    df = pd.DataFrame(table_data, columns=["Year", "Interest Rate (%)", "Monthly Payment (£)"])
-
-    def highlight_cells(row):
-        index = row.name  # Get row index
-        if index % 3 == 0:
-            return ['background-color: lightgreen; color: black'] * len(row)  # Green with black text
-        elif index % 3 == 1:
-            return ['background-color: white; color: black'] * len(row)  # White with black text
-        else:
-            return ['background-color: salmon; color: black'] * len(row)  # Red with black text
-
-    styled_df = df.style.apply(highlight_cells, axis=1).hide(axis="index")  # Hide index
+    down_payment = pred_price * dp
+    loan_amount = pred_price - down_payment
+    loan_term = 25  # Fixed loan term
+    months = loan_term * 12
     
-    return styled_df
+    # Sensitivity Analysis: ±0.5% around selected interest rate
+    sensitivity_rates = [selected_rate - 0.005, selected_rate, selected_rate + 0.005]
+    mortgage_payments = {}
 
-# Streamlit UI
+    for rate in sensitivity_rates:
+        monthly_rate = rate / 12
+        M = loan_amount * (monthly_rate * (1 + monthly_rate) ** months) / ((1 + monthly_rate) ** months - 1)
+        mortgage_payments[f"{rate*100:.2f}%"] = {
+            'monthly_payment': M,
+            'down_payment': down_payment,
+            'total_paid': M * months,
+            'total_interest': (M * months) - loan_amount
+        }
+
+    return target_year, mortgage_payments
+
 def show():
-    st.title("Mortgage Calculator")
+    st.title("🏡 Comprehensive Mortgage Calculator")
     
-    # Input form
-    with st.form("mortgage_form"):
-        st.write("Enter the details of the mortgage:")
+    # Predefined interest rates (matching previous implementation)
+    interest_rates = [0.04344, 0.04252, 0.03973, 0.04166, 0.0428, 0.0418, 0.04325, 0.0442, 0.049, 0.0493, 0.0493, 0.0468, 0.0468, 0.0468, 0.04898]
+    
+    # Load necessary models and data
+    with st.spinner("Loading prediction models..."):
+        prophet_model, xgb_res_model = load_models()
+        df = load_data()
+        pop_all_data = load_population_data()
+        postcode_freq_data = load_postcode_freq()
+        encoded_features = load_encoded_features()
+        scale_factors = load_scale_factors()
+    
+    # Sidebar for additional controls and information
+    st.sidebar.header("🔍 Mortgage Calculator Settings")
+    
+    # Main content area with tabs
+    tab1, tab2, tab3 = st.tabs(["📊 Price & Mortgage", "💡 Insights", "🧮 Advanced Options"])
+    
+    with tab1:
+        # DEPOSIT DISCLAIMER
+        st.warning("""
+        🚨 Important Deposit Notice 🚨
+        - This calculator uses a FIXED 10% deposit
+        - Actual deposit requirements vary by lender
+        - Some mortgages may require 15-20% deposit
+        - Lower deposits might incur higher interest rates
+        """)
         
-        # Collect user inputs
-        house_price = st.number_input("House Price (£)", min_value=0.0, value=320000.0, step=1000.0)
-        tenure_type = st.selectbox("Tenure Type", ["Freehold (F)", "Leasehold (L)", "Unknown (U)"], index=0)
+        col1, col2 = st.columns([2, 1])
         
-        # Checkbox to toggle custom loan length input
-        use_custom_loan_length = st.checkbox(
-            "Input custom loan length (in years)",
-            value=False,  # Default to unchecked
-            key="use_custom_loan_length"
-        )
-        
-        # Always display the loan length input box
-        loan_length = st.number_input(
-            "Desired Loan Length (years)",
-            min_value=1,
-            max_value=50,
-            value=25,  # Default value
-            step=1,
-            disabled=not use_custom_loan_length  # Disable if checkbox is unchecked
-        )
-        
-        # If checkbox is unchecked, calculate loan length based on tenure type
-        if not use_custom_loan_length:
-            tenure_code = tenure_type.split(" ")[1].strip("()")
-            loan_length = estimate_loan_term(tenure_code)
-        
-        # Example interest rates (can be replaced with dynamic data)
-        interest_rates = [0.04344, 0.04252, 0.03973, 0.04166, 0.0428, 0.0418, 0.04325, 0.0442, 0.049, 0.0493, 0.0493, 0.0468, 0.0468, 0.0468, 0.04898]
-        
-        submitted = st.form_submit_button("Calculate Mortgage Payments")
-
-        if submitted:
-            try:
-                # Calculate target date based on loan length
-                today = datetime.date.today()
-                target_date = today + datetime.timedelta(days=loan_length * 365)
-                
-                # Run the function to get mortgage payments
-                prediction_year, results = projected_mortgage_payment(house_price, loan_length, interest_rates, target_date)
-                
-                # Display the color-coded mortgage table
-                st.subheader("Mortgage Payment Projections")
-                styled_table = display_colored_mortgage_table(prediction_year, results)
-                st.dataframe(styled_table, use_container_width=True)
+        with col1:
+            # Price Determination Section
+            st.subheader("🏘️ Property Valuation")
+            price_method = st.radio(
+                "How would you like to determine the house price?", 
+                ["Predict Price", "Enter Manually"],
+                help="Choose whether to use our prediction model or enter a price manually."
+            )
             
-            except ValueError as e:
-                st.error(f"Error: {str(e)}")
+            # Prediction or Manual Input
+            if price_method == "Predict Price":
+                with st.expander("Property Details for Prediction"):
+                    postcode = st.text_input("Postcode").upper()
+                    street_name = st.text_input("Street Name (optional)")
+                    house_number = st.text_input("House Number (optional)")
+                    
+                    if postcode:
+                        features = extract_features(df, postcode, street_name, house_number)
+                        
+                        if features is not None:
+                            prediction = predict_house_price_hybrid(
+                                ds=datetime.datetime.now(),
+                                numberrooms=features['numberOfBedrooms'],
+                                Postcode=postcode,
+                                region=features['borough'],
+                                house_type=features['house_Type'],
+                                tfarea=features['tfarea'],
+                                CURRENT_ENERGY_EFFICIENCY=features['CURRENT_ENERGY_EFFICIENCY'],
+                                POTENTIAL_ENERGY_EFFICIENCY=features['POTENTIAL_ENERGY_EFFICIENCY'],
+                                postcode_freq_data=postcode_freq_data,
+                                pop_all_data=pop_all_data,
+                                encoded_features=encoded_features,
+                                prophet_model=prophet_model,
+                                xgb_res_model=xgb_res_model,
+                                property_age="old",
+                                tenure_type="freehold",
+                                scale_factors=scale_factors
+                            )
+                            
+                            predicted_price = prediction['Predicted_Price']
+                            st.success(f"Predicted House Price: £{predicted_price:,.0f}")
+                        else:
+                            st.warning("No matching data found. Please enter house price manually.")
+                            predicted_price = None
+            else:
+                predicted_price = st.number_input(
+                    "House Price (£)", 
+                    min_value=50000.0, 
+                    max_value=5000000.0, 
+                    value=320000.0, 
+                    step=10000.0,
+                    help="Enter the total value of the property you're interested in."
+                )
+            
+            # Mortgage Details
+            st.subheader("💰 Mortgage Details")
+            
+            # Target Date Selection
+            target_date = st.date_input(
+                "Projected Mortgage Start Date", 
+                value=datetime.date.today(),
+                help="Select the date when you expect to start your mortgage"
+            )
+            
+            # Loan Length Selection
+            loan_length = st.select_slider(
+                "Loan Term (Years)", 
+                options=[10, 15, 20, 25, 30, 35, 40],
+                value=25,
+                help="Duration over which you'll repay the mortgage"
+            )
+            
+            # Calculate Button
+            if st.button("Calculate Mortgage Details", type="primary"):
+                if predicted_price is not None:
+                    # Calculate mortgage payments with error bounds
+                    prediction_year, results = mortgage_payments(
+                        predicted_price, 
+                        interest_rates, 
+                        target_date
+                    )
+                    
+                    # Display results
+                    st.subheader("📈 Mortgage Payment Scenarios")
+                    
+                    # Create DataFrame for display
+                    table_data = []
+                    for rate, details in results.items():
+                        table_data.append([
+                            rate, 
+                            f"£{details['monthly_payment']:,.2f}", 
+                            f"£{details['down_payment']:,.2f}",
+                            f"£{details['total_paid']:,.2f}",
+                            f"£{details['total_interest']:,.2f}"
+                        ])
+                    
+                    df = pd.DataFrame(table_data, columns=[
+                        "Interest Rate", 
+                        "Monthly Payment", 
+                        "Down Payment", 
+                        "Total Paid", 
+                        "Total Interest"
+                    ])
+                    
+                    # Color-styled table with alternating colors
+                    def color_rows(row):
+                        index = row.name % 3
+                        if index == 0:
+                            return ['background-color: lightgreen'] * len(row)
+                        elif index == 1:
+                            return ['background-color: white'] * len(row)
+                        else:
+                            return ['background-color: salmon'] * len(row)
+                    
+                    styled_df = df.style.apply(color_rows, axis=1)
+                    
+                    # Display styled DataFrame
+                    st.dataframe(styled_df)
+                    
+                    # Detailed explanation
+                    st.info(f"""
+                    ### Mortgage Payment Analysis for {prediction_year}
+                    - Scenarios show monthly payments at ±0.5% interest rate variation
+                    - Green: Lower end of rate range
+                    - White: Mid-point rate
+                    - Red: Upper end of rate range
+                    - Interest rates used are predefined historical/projected rates
+                    """)
+                else:
+                    st.error("Please provide a valid house price.")
+        
+        with col2:
+            st.sidebar.header("💡 Quick Tips")
+            st.sidebar.info("""
+            🔑 Mortgage Calculator Tips:
+            - 10% deposit is currently fixed
+            - Variations in interest rates impact monthly payments
+            - Consider multiple scenarios
+            - Always seek professional financial advice
+            """)
+    
+    with tab2:
+        st.header("📊 Mortgage Insights")
+        st.write("""
+        ### Understanding Your Mortgage
+        
+        **What impacts your mortgage?**
+        - Property Value
+        - Deposit Amount (Currently Fixed at 10%)
+        - Interest Rates
+        - Loan Duration
+        
+        **Strategies to Reduce Mortgage Costs:**
+        1. Save for a larger deposit
+        2. Improve credit score
+        3. Choose shorter loan terms
+        4. Shop around for best rates
+        """)
+    
+    with tab3:
+        st.header("🧮 Advanced Options")
+        st.write("Coming soon: Detailed amortization schedules and advanced financial modeling.")
 
 # Run the main function
 if __name__ == "__main__":
