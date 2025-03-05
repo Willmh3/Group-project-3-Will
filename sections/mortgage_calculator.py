@@ -16,31 +16,21 @@ def estimate_loan_term(tenure_type):
     }
     return tenure_terms.get(tenure_type, 25)
 
-def mortgage_payments(pred_price, interest_rates, target_date, dp=0.10, dp_variation=0.015):
+def mortgage_payments(pred_price, interest_rates, dp=0.10, dp_variation=0.015):
     """
     Calculate mortgage payments with sensitivity analysis using predefined interest rates.
     
     Args:
     - pred_price: Property price
     - interest_rates: Predefined list of interest rates
-    - target_date: Date for which to select interest rate
     - dp: Deposit percentage (default 10%)
     - dp_variation: Deposit percentage variation
     
     Returns:
     Dictionary of mortgage payments with different scenarios
     """
-    today = datetime.date.today()
-    target_year = target_date.year
-    current_year = today.year
-    
-    years_diff = max(1, math.ceil(target_year - current_year))  # Round up
-    
-    # Use the last interest rate if target year is beyond available rates
-    if years_diff > len(interest_rates):
-        selected_rate = interest_rates[-1]
-    else:
-        selected_rate = interest_rates[years_diff - 1]
+    # Use the first (current) interest rate from the list
+    selected_rate = interest_rates[0]
     
     down_payment = pred_price * dp
     loan_amount = pred_price - down_payment
@@ -61,7 +51,7 @@ def mortgage_payments(pred_price, interest_rates, target_date, dp=0.10, dp_varia
             'total_interest': (M * months) - loan_amount
         }
 
-    return target_year, mortgage_payments
+    return mortgage_payments
 
 def show():
     st.title("🏡 Comprehensive Mortgage Calculator")
@@ -77,9 +67,6 @@ def show():
         postcode_freq_data = load_postcode_freq()
         encoded_features = load_encoded_features()
         scale_factors = load_scale_factors()
-    
-    # Sidebar for additional controls and information
-    st.sidebar.header("🔍 Mortgage Calculator Settings")
     
     # Main content area with tabs
     tab1, tab2, tab3 = st.tabs(["📊 Price & Mortgage", "💡 Insights", "🧮 Advanced Options"])
@@ -111,35 +98,6 @@ def show():
                     postcode = st.text_input("Postcode").upper()
                     street_name = st.text_input("Street Name (optional)")
                     house_number = st.text_input("House Number (optional)")
-                    
-                    if postcode:
-                        features = extract_features(df, postcode, street_name, house_number)
-                        
-                        if features is not None:
-                            prediction = predict_house_price_hybrid(
-                                ds=datetime.datetime.now(),
-                                numberrooms=features['numberOfBedrooms'],
-                                Postcode=postcode,
-                                region=features['borough'],
-                                house_type=features['house_Type'],
-                                tfarea=features['tfarea'],
-                                CURRENT_ENERGY_EFFICIENCY=features['CURRENT_ENERGY_EFFICIENCY'],
-                                POTENTIAL_ENERGY_EFFICIENCY=features['POTENTIAL_ENERGY_EFFICIENCY'],
-                                postcode_freq_data=postcode_freq_data,
-                                pop_all_data=pop_all_data,
-                                encoded_features=encoded_features,
-                                prophet_model=prophet_model,
-                                xgb_res_model=xgb_res_model,
-                                property_age="old",
-                                tenure_type="freehold",
-                                scale_factors=scale_factors
-                            )
-                            
-                            predicted_price = prediction['Predicted_Price']
-                            st.success(f"Predicted House Price: £{predicted_price:,.0f}")
-                        else:
-                            st.warning("No matching data found. Please enter house price manually.")
-                            predicted_price = None
             else:
                 predicted_price = st.number_input(
                     "House Price (£)", 
@@ -153,13 +111,6 @@ def show():
             # Mortgage Details
             st.subheader("💰 Mortgage Details")
             
-            # Target Date Selection
-            target_date = st.date_input(
-                "Projected Mortgage Start Date", 
-                value=datetime.date.today(),
-                help="Select the date when you expect to start your mortgage"
-            )
-            
             # Loan Length Selection
             loan_length = st.select_slider(
                 "Loan Term (Years)", 
@@ -170,12 +121,47 @@ def show():
             
             # Calculate Button
             if st.button("Calculate Mortgage Details", type="primary"):
-                if predicted_price is not None:
+                try:
+                    if price_method == "Predict Price":
+                        # Validate postcode input
+                        if not postcode or postcode.strip() == "":
+                            st.error("Please enter a postcode for price prediction.")
+                            st.stop()
+                        
+                        # Attempt to extract features
+                        features = extract_features(df, postcode, street_name, house_number)
+                        
+                        if features is None:
+                            st.error("No matching data found for the given postcode. Please try a different postcode or enter the price manually.")
+                            st.stop()
+                        
+                        # Predict house price
+                        prediction = predict_house_price_hybrid(
+                            ds=datetime.datetime.now(),
+                            numberrooms=features['numberOfBedrooms'],
+                            Postcode=postcode,
+                            region=features['borough'],
+                            house_type=features['house_Type'],
+                            tfarea=features['tfarea'],
+                            CURRENT_ENERGY_EFFICIENCY=features['CURRENT_ENERGY_EFFICIENCY'],
+                            POTENTIAL_ENERGY_EFFICIENCY=features['POTENTIAL_ENERGY_EFFICIENCY'],
+                            postcode_freq_data=postcode_freq_data,
+                            pop_all_data=pop_all_data,
+                            encoded_features=encoded_features,
+                            prophet_model=prophet_model,
+                            xgb_res_model=xgb_res_model,
+                            property_age="old",
+                            tenure_type="freehold",
+                            scale_factors=scale_factors
+                        )
+                        
+                        predicted_price = prediction['Predicted_Price']
+                        st.success(f"Predicted House Price: £{predicted_price:,.0f}")
+                    
                     # Calculate mortgage payments with error bounds
-                    prediction_year, results = mortgage_payments(
+                    results = mortgage_payments(
                         predicted_price, 
-                        interest_rates, 
-                        target_date
+                        interest_rates
                     )
                     
                     # Display results
@@ -216,26 +202,21 @@ def show():
                     st.dataframe(styled_df)
                     
                     # Detailed explanation
-                    st.info(f"""
-                    ### Mortgage Payment Analysis for {prediction_year}
+                    st.info("""
+                    ### Mortgage Payment Analysis
                     - Scenarios show monthly payments at ±0.5% interest rate variation
                     - Green: Lower end of rate range
                     - White: Mid-point rate
                     - Red: Upper end of rate range
                     - Interest rates used are predefined historical/projected rates
                     """)
-                else:
-                    st.error("Please provide a valid house price.")
+                
+                except Exception as e:
+                    st.error(f"An error occurred: {str(e)}")
         
         with col2:
-            st.sidebar.header("💡 Quick Tips")
-            st.sidebar.info("""
-            🔑 Mortgage Calculator Tips:
-            - 10% deposit is currently fixed
-            - Variations in interest rates impact monthly payments
-            - Consider multiple scenarios
-            - Always seek professional financial advice
-            """)
+            # Intentionally left empty
+            pass
     
     with tab2:
         st.header("📊 Mortgage Insights")
