@@ -404,8 +404,7 @@ def show():
     
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
-        st.info("Please check if all required files (prophet_model.pkl, xgb_res_model.pkl, FinalData.parquet, postcode_freq.csv, scale_factors.pkl) exist in the correct location.")
-            
+        st.info("Please check if all required files (prophet_model.pkl, xgb_res_model.pkl, FinalData.parquet, postcode_freq.csv, scale_factors.pkl) exist in the correct location.") 
                
 # Run the main function
 if __name__ == "__main__":

@@ -103,8 +103,8 @@ def show():
                     "House Price (£)", 
                     min_value=50000.0, 
                     max_value=5000000.0, 
-                    value=320000.0, 
-                    step=10000.0,
+                    value=500000.0, 
+                    step=50000.0,
                     help="Enter the total value of the property you're interested in."
                 )
             
