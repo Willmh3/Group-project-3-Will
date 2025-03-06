@@ -120,7 +120,7 @@ def extract_features(df, postcode, street_name=None, house_number=None, flat_num
     
     # Apply additional filters if provided
     if street_name:
-        filtered_df = filtered_df[filtered_df['Street_Name'] == street_name]
+        filtered_df = filtered_df[filtered_df['Street_Name'].str.upper() == street_name.upper()]
     if house_number:
         filtered_df = filtered_df[filtered_df['House_Number'] == house_number]
     if flat_number:
@@ -330,17 +330,47 @@ def show():
             encoded_features = load_encoded_features()
             scale_factors = load_scale_factors()  # Load scale factors
         
-        # Input form
+        # Input form with compact layout
         with st.form("house_price_form"):
             st.write("Enter the details of the house:")
             
-            # Collect user inputs
-            postcode = st.text_input("Postcode").upper()
-            street_name = st.text_input("Street Name (optional)")
-            house_number = st.text_input("House Number (optional)")
-            flat_number = st.text_input("Flat Number (optional)")
+            # Use columns to make fields take up less space
+            col1, col2 = st.columns(2)
             
-            submitted = st.form_submit_button("Predict Price")
+            with col1:
+                postcode = st.text_input("Postcode", max_chars=10).upper()
+            
+            with col2:
+                street_name = st.text_input("Street Name (optional)", max_chars=50)
+            
+            col3, col4 = st.columns(2)
+            
+            with col3:
+                house_number = st.text_input("House Number (optional)", max_chars=10)
+            
+            with col4:
+                flat_number = st.text_input("Flat Number (optional)", max_chars=10)
+            
+            # Add some space before the button (optional)
+            st.write("")
+            
+            # Use Markdown and HTML to create a red button in the bottom-left
+            # Note: We need to use a container for alignment
+            left_col, _, _ = st.columns([1, 2, 2])
+            with left_col:
+                submitted = st.form_submit_button("Predict Price", 
+                                                use_container_width=False,
+                                                type="primary")  # type="primary" gives it color
+            
+            # Apply custom CSS to make the button red
+            st.markdown("""
+            <style>
+            div[data-testid="stFormSubmitButton"] > button {
+                background-color: #FF0000 !important;
+                color: white !important;
+            }
+            </style>
+            """, unsafe_allow_html=True)
 
         if submitted:
             if not postcode:
@@ -354,12 +384,12 @@ def show():
             if features is not None:
                 st.subheader("Property Details")
                 feature_display = {
-                    "Number of Bedrooms": round(features['numberOfBedrooms']),
-                    "Area (sq ft)": round(features['tfarea']),
-                    "Current Energy Efficiency": round(features['CURRENT_ENERGY_EFFICIENCY']),
-                    "Potential Energy Efficiency": round(features['POTENTIAL_ENERGY_EFFICIENCY']),
-                    "Borough": features['borough'],
-                    "Property Type": features['house_Type']
+                    "Number of Bedrooms": round(features['numberOfBedrooms']) if not pd.isna(features['numberOfBedrooms']) else 'Unknown',
+                    "Area (sq ft)": round(features['tfarea']) if not pd.isna(features['tfarea']) else 'Unknown',
+                    "Current Energy Efficiency": round(features['CURRENT_ENERGY_EFFICIENCY']) if not pd.isna(features['CURRENT_ENERGY_EFFICIENCY']) else 'Unknown',
+                    "Potential Energy Efficiency": round(features['POTENTIAL_ENERGY_EFFICIENCY']) if not pd.isna(features['POTENTIAL_ENERGY_EFFICIENCY']) else 'Unknown',
+                    "Borough": features['borough'] if not pd.isna(features['borough']) else 'Unknown',
+                    "Property Type": features['house_Type'] if not pd.isna(features['house_Type']) else 'Unknown'
                 }
                 
                 # Display features in a nicer format
@@ -374,13 +404,13 @@ def show():
                 with st.spinner("Calculating price prediction..."):
                     prediction = predict_house_price_hybrid(
                         ds=datetime.now(),
-                        numberrooms=features['numberOfBedrooms'],
+                        numberrooms=features['numberOfBedrooms'] if not pd.isna(features['numberOfBedrooms']) else 2.95,
                         Postcode=postcode,
-                        region=features['borough'] if 'borough' in features else None,
-                        house_type=features['house_Type'] if 'house_Type' in features else None,
-                        tfarea=features['tfarea'],
-                        CURRENT_ENERGY_EFFICIENCY=features['CURRENT_ENERGY_EFFICIENCY'],
-                        POTENTIAL_ENERGY_EFFICIENCY=features['POTENTIAL_ENERGY_EFFICIENCY'],
+                        region=features['borough'] if 'borough' in features and not pd.isna(features['borough']) else None,
+                        house_type=features['house_Type'] if 'house_Type' in features and not pd.isna(features['house_Type']) else None,
+                        tfarea=features['tfarea'] if not pd.isna(features['tfarea']) else 800,
+                        CURRENT_ENERGY_EFFICIENCY=features['CURRENT_ENERGY_EFFICIENCY'] if not pd.isna(features['CURRENT_ENERGY_EFFICIENCY']) else 65,
+                        POTENTIAL_ENERGY_EFFICIENCY=features['POTENTIAL_ENERGY_EFFICIENCY'] if not pd.isna(features['POTENTIAL_ENERGY_EFFICIENCY']) else 80,
                         postcode_freq_data=postcode_freq_data,
                         pop_all_data=pop_all_data,
                         encoded_features=encoded_features,
@@ -404,8 +434,7 @@ def show():
     
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
-        st.info("Please check if all required files (prophet_model.pkl, xgb_res_model.pkl, FinalData.parquet, postcode_freq.csv, scale_factors.pkl) exist in the correct location.") 
-               
+        st.info("Please check if all required files (prophet_model.pkl, xgb_res_model.pkl, FinalData.parquet, postcode_freq.csv, scale_factors.pkl) exist in the correct location.")               
 # Run the main function
 if __name__ == "__main__":
     show()

@@ -8,7 +8,6 @@ import sections.home as home
 import sections.house_price as house_price
 import sections.data_analytics as data_analytics
 import sections.house_searching as house_searching
-import sections.credits as credits
 import sections.mortgage_calculator as mortgage_calculator
 import sections.borough_analysis as borough_analysis
 
@@ -57,8 +56,7 @@ pages = {
     "📊 Data Analytics": "data_analytics",
     "🔍 House Searching": "house_searching",
     "🔍 Borough Analysis": "borough_analysis",
-    "💰 Mortgage Calculator": "mortgage_calculator",  # Add the Mortgage Calculator
-    "Credits": "credits"
+    "💰 Mortgage Calculator": "mortgage_calculator",
 }
 
 for label, page in pages.items():
@@ -84,7 +82,5 @@ elif st.session_state.selected == 'borough_analysis':
     borough_analysis.show()
 elif st.session_state.selected == 'mortgage_calculator':  # Show the Mortgage Calculator page
     mortgage_calculator.show()
-elif st.session_state.selected == 'credits':
-    credits.show()
 else:
     st.error("Invalid page selection. Please try again.")
