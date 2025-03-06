@@ -203,7 +203,7 @@ def show():
             st.markdown("### Results Table")
         if st.session_state['advancedShow']:
             st.markdown("### Advanced Search")
-            st.write("Select what matters to you xx")
+            st.write("Select what matters to you:")
             colx, coly, colz = st.columns([1, 1, 1])
             with colx:
                 st.session_state['greenSpaceCheck'] = st.checkbox("Green Space", value = st.session_state['greenSpaceCheck'])
