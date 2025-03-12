@@ -29,7 +29,9 @@ column_mapping = {
     "borough": "Borough",
     "houseType": "House Type",
     "numberOfBedrooms": "Bedrooms"
+
 }
+
 
 def pSearch(hLong, hLat, pLong, pLat):
 
@@ -100,8 +102,8 @@ def getWardScore(wardScores, lsoa):
 
 
 def show():
-    maxPrice = data['price'].max()
-    minPrice = data['price'].min()
+    maxPrice = 5000000
+    minPrice = 0
     st.title("🔍 House Searching")
     st.write("This section will help you search for houses based on different criteria.")
     st.write(data.head()) if DEBUG else None
@@ -151,7 +153,7 @@ def show():
         borough = st.selectbox("Borough:", londonBoroughs)
         houseType = st.selectbox("House Type:", ["Show All", "F", "T", "S", "O", "D"])
         numBedrooms = st.slider("Number of Bedrooms:", min_value=1, max_value=10, value=1, step=1)
-        maxPrice = st.slider("Maximum Price:", min_value=int(minPrice), max_value=int(maxPrice), value=1000000, step=50000)
+        maxPrice = st.slider("Maximum Price:", min_value=int(minPrice), max_value=int(maxPrice), value=1000000, step=5000)
         col1a, col1b = st.columns(2)
         with col1a:
             if st.button("Advanced"):
@@ -195,7 +197,7 @@ def show():
                     ]
                 st.write(f"After beer filter: {len(filteredData)} rows") if DEBUG else None
 
-                filteredData = filteredData.sort_values(by="price", ascending=False).head(10)
+                filteredData = filteredData.sort_values(by="price", ascending=False)
                 st.session_state['filteredData'] = filteredData
 
     with col2:
@@ -249,7 +251,7 @@ def show():
         elif not st.session_state['filteredData'].empty:
             if "lsoaCode" in st.session_state['filteredData'].columns:
                 st.session_state['filteredData']["Ward Score"] = st.session_state['filteredData']["lsoaCode"].apply(
-                    lambda lsoa: getWardScore(wardScore, lsoa) if pd.notna(lsoa) else None
+                    lambda lsoa: round(getWardScore(wardScore, lsoa), -1) if pd.notna(lsoa) else None
                 )
             else:
                 st.write("big error") if DEBUG else None
@@ -257,6 +259,8 @@ def show():
 
             if displayType == "Table":
                 displayData = st.session_state['filteredData'].rename(columns=column_mapping)
+                displayData = displayData[['OldPrice', 'postcode','House_Number', 'Flat_Number', 'Street_Name', 'Borough', 'Bedrooms', 'tfarea', 'house_Type', 'Status_N', 'Tenure_Type',  'Ward Score']]
+                displayData = displayData.sort_values(by=['OldPrice', 'Ward Score'], ascending = False).head(10)
                 st.dataframe(displayData, height=410)
             else:
                 mapData = st.session_state['filteredData'].dropna(subset=["latitude", "longitude"])
