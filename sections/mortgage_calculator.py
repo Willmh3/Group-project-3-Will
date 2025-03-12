@@ -69,7 +69,7 @@ def show():
         scale_factors = load_scale_factors()
     
     # Main content area with tabs
-    tab1, tab2, tab3 = st.tabs(["📊 Price & Mortgage", "💡 Insights", "🧮 Advanced Options"])
+    tab1, tab2 = st.tabs(["📊 Price & Mortgage", "💡 Insights"])
     
     with tab1:
         # DEPOSIT DISCLAIMER
@@ -235,10 +235,6 @@ def show():
         3. Choose shorter loan terms
         4. Shop around for best rates
         """)
-    
-    with tab3:
-        st.header("🧮 Advanced Options")
-        st.write("Coming soon: Detailed amortization schedules and advanced financial modeling.")
 
 # Run the main function
 if __name__ == "__main__":
