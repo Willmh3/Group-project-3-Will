@@ -174,7 +174,7 @@ def show():
                 st.write(f"After bedroom filter: {len(filteredData)} rows") if DEBUG else None
 
                 if maxPrice:
-                    filteredData = filteredData[filteredData["price"] <= maxPrice]
+                    filteredData = filteredData[filteredData["OldPrice"] <= maxPrice]
                 st.write(f"After price filter: {len(filteredData)} rows") if DEBUG else None
 
                 if houseType != "Show All":
